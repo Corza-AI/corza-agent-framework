@@ -96,6 +96,7 @@ def tool(
     timeout_seconds: int = 30,
     retry_max: int = 0,
     tags: list[str] | None = None,
+    json_schema: dict[str, Any] | None = None,
 ) -> Callable:
     """
     Decorator to register a function as an agent tool.
@@ -117,7 +118,8 @@ def tool(
         tool_name = name or fn.__name__
         tool_desc = description or (fn.__doc__ or "").strip().split("\n")[0] or tool_name
 
-        json_schema = _build_json_schema(fn)
+        # Use explicit schema if provided, otherwise auto-generate from signature
+        resolved_schema = json_schema if json_schema is not None else _build_json_schema(fn)
 
         is_async = asyncio.iscoroutinefunction(fn)
 
@@ -131,7 +133,7 @@ def tool(
             name=tool_name,
             description=tool_desc,
             tool_type=tool_type,
-            json_schema=json_schema,
+            json_schema=resolved_schema,
             permission_level=permission_level,
             timeout_seconds=timeout_seconds,
             retry_max=retry_max,

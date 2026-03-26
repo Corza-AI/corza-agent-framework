@@ -59,6 +59,9 @@ from corza_agents.streaming.events import (
     error_event,
     session_completed,
     session_started,
+    text_delta,
+    thinking_delta,
+    tool_call_event,
     tool_executing,
     tool_result_event,
     turn_completed,
@@ -296,16 +299,43 @@ class AgentEngine:
                         current_messages, current_tools, context
                     )
 
-                # Call LLM with retry
+                # Call LLM with retry — text/thinking deltas are streamed
+                # in real-time via an async queue, yielded as they arrive.
+                _stream_q: asyncio.Queue[StreamEvent | None] = asyncio.Queue()
+                _llm_error: list[Exception] = []  # Capture errors from the LLM task
+
+                async def _on_stream(evt: StreamEvent):
+                    await _stream_q.put(evt)
+
+                async def _llm_task():
+                    try:
+                        return await self._call_llm_with_retry(
+                            session_id=session_id,
+                            messages=current_messages,
+                            tools=current_tools,
+                            agent_def=agent_def,
+                            system_prompt=system_prompt,
+                            turn=turn,
+                            on_stream_event=_on_stream,
+                        )
+                    except Exception as e:
+                        _llm_error.append(e)
+                        raise
+                    finally:
+                        await _stream_q.put(None)  # Sentinel
+
+                llm_future = asyncio.ensure_future(_llm_task())
+
+                # Yield streaming events as they arrive
+                while True:
+                    evt = await _stream_q.get()
+                    if evt is None:
+                        break
+                    yield evt
+
+                # Re-raise any LLM error
                 try:
-                    full_text, tool_calls, usage, stop_reason = await self._call_llm_with_retry(
-                        session_id=session_id,
-                        messages=current_messages,
-                        tools=current_tools,
-                        agent_def=agent_def,
-                        system_prompt=system_prompt,
-                        turn=turn,
-                    )
+                    full_text, tool_calls, usage, stop_reason = await llm_future
                 except (LLMError, ContextOverflowError) as e:
                     # Turn-level recovery: don't fail the session, allow resume
                     log.error("turn_llm_failed", session_id=session_id, turn=turn,
@@ -538,6 +568,7 @@ class AgentEngine:
         agent_def: AgentDefinition,
         system_prompt: str,
         turn: int,
+        on_stream_event: Any = None,
     ) -> tuple[str, list[ToolCall], LLMUsage, StopReason]:
         """
         Call LLM with automatic retry on transient errors + provider fallback.
@@ -568,7 +599,7 @@ class AgentEngine:
             try:
                 return await self._call_single_model(
                     session_id, messages, tools, agent_def, system_prompt,
-                    turn, current_model,
+                    turn, current_model, on_stream_event=on_stream_event,
                 )
             except LLMError as e:
                 last_error = e
@@ -588,8 +619,16 @@ class AgentEngine:
         system_prompt: str,
         turn: int,
         model: str,
+        on_stream_event: Any = None,
     ) -> tuple[str, list[ToolCall], LLMUsage, StopReason]:
-        """Call a single model with retry logic."""
+        """Call a single model with retry logic.
+
+        Args:
+            on_stream_event: Optional async callback(StreamEvent) invoked for
+                each text_delta / thinking chunk during streaming. This enables
+                real-time token streaming to SSE clients while the engine still
+                accumulates the full response for persistence.
+        """
         max_retries = agent_def.max_llm_retries
         context_compacted = False
 
@@ -617,8 +656,30 @@ class AgentEngine:
                     async for chunk in response:
                         if chunk.type == "text_delta" and chunk.text:
                             full_text += chunk.text
+                            # Emit real-time text streaming event
+                            if on_stream_event:
+                                await on_stream_event(
+                                    text_delta(session_id, chunk.text, turn)
+                                )
+                        elif chunk.type == "thinking_delta" and chunk.text:
+                            # Emit real-time thinking streaming event
+                            if on_stream_event:
+                                await on_stream_event(
+                                    thinking_delta(session_id, chunk.text, turn)
+                                )
                         elif chunk.type == "tool_call_end" and chunk.tool_call:
                             tool_calls.append(chunk.tool_call)
+                            # Emit tool_call event for SSE buffering
+                            if on_stream_event and chunk.tool_call:
+                                await on_stream_event(
+                                    tool_call_event(
+                                        session_id,
+                                        chunk.tool_call.tool_name,
+                                        chunk.tool_call.id,
+                                        chunk.tool_call.arguments,
+                                        turn,
+                                    )
+                                )
                         elif chunk.type == "usage":
                             if chunk.usage:
                                 usage = chunk.usage
