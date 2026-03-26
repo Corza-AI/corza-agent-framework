@@ -108,6 +108,7 @@ from corza_agents.middleware.context_compression import (
     ContextCompressionMiddleware,
     progressive_compress,
 )
+from corza_agents.middleware.loop_guard import LoopGuardConfig, LoopGuardMiddleware
 from corza_agents.middleware.permissions import PermissionMiddleware, PermissionRule
 from corza_agents.middleware.rate_limit import RateLimitMiddleware
 from corza_agents.middleware.token_tracking import TokenTrackingMiddleware
@@ -192,6 +193,7 @@ __all__ = [
     "AuditMiddleware", "TokenTrackingMiddleware",
     "PermissionMiddleware", "PermissionRule", "RateLimitMiddleware",
     "ContextCompressionMiddleware", "CompressionConfig", "progressive_compress",
+    "LoopGuardMiddleware", "LoopGuardConfig",
     # Context Health
     "ContextHealthConfig", "assess_health", "compute_health_score",
     # Persistence

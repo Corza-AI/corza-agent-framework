@@ -467,6 +467,22 @@ class AgentEngine:
                              session_complete=bool(working_memory.get("_session_complete")))
                     break  # Exit loop → finalize session
 
+                # ── External termination callback ──────────────────────
+                # Callers can provide a should_continue(context) callback in
+                # metadata for custom termination logic (cost limits, time
+                # budgets, external signals, etc.)
+                _should_continue = (metadata or {}).get("should_continue")
+                if callable(_should_continue):
+                    try:
+                        if not _should_continue(context):
+                            log.info("should_continue_false",
+                                     session_id=session_id, turn=turn)
+                            break
+                    except Exception as _sc_err:
+                        log.warning("should_continue_error",
+                                    session_id=session_id,
+                                    error=str(_sc_err)[:200])
+
                 # ── Context health monitoring ──────────────────────────
                 health_config = agent_def.metadata.get("context_health")
                 if isinstance(health_config, ContextHealthConfig):

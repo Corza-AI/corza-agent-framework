@@ -551,6 +551,68 @@ async def manage_context(ctx: ExecutionContext = None) -> dict:
 
 
 # ══════════════════════════════════════════════════════════════════════
+# Lifecycle — Session & Task Completion
+# ══════════════════════════════════════════════════════════════════════
+
+@tool(
+    name="session_complete",
+    description=(
+        "Signal that you are DONE with the current session. Call this after you "
+        "have delivered your final response and have no more work to do. "
+        "The engine will stop the loop after this tool executes. "
+        "Provide a brief summary of what was accomplished."
+    ),
+    timeout_seconds=5,
+    tags=["lifecycle", "termination"],
+)
+async def session_complete(
+    summary: str = "",
+    ctx: ExecutionContext = None,
+) -> dict:
+    """
+    Signal session completion. Sets _session_complete flag in working memory.
+    The engine checks this flag after each turn and stops the loop.
+    """
+    if ctx and ctx.working_memory:
+        ctx.working_memory.store("_session_complete", True)
+        if summary:
+            ctx.working_memory.store("_session_summary", summary)
+    return {
+        "status": "complete",
+        "message": "Session marked complete. Engine will stop after this turn.",
+    }
+
+
+@tool(
+    name="task_complete",
+    description=(
+        "Signal that a delegated task or investigation is complete. "
+        "Include a summary of findings in the mini_report field. "
+        "Call this when you (as a sub-agent) have finished your assigned work."
+    ),
+    timeout_seconds=5,
+    tags=["lifecycle", "termination"],
+)
+async def task_complete(
+    mini_report: str = "",
+    status: str = "completed",
+    ctx: ExecutionContext = None,
+) -> dict:
+    """
+    Signal task completion. Sets _task_complete flag in working memory.
+    The engine checks this flag after each turn and stops the loop.
+    """
+    if ctx and ctx.working_memory:
+        ctx.working_memory.store("_task_complete", True)
+        if mini_report:
+            ctx.working_memory.store("_task_report", mini_report)
+    return {
+        "status": "complete",
+        "message": f"Task marked {status}. Report saved ({len(mini_report)} chars).",
+    }
+
+
+# ══════════════════════════════════════════════════════════════════════
 # Export
 # ══════════════════════════════════════════════════════════════════════
 
@@ -562,4 +624,6 @@ BUILTIN_TOOLS = [
     manage_knowledge,
     manage_skill,
     manage_context,
+    session_complete,
+    task_complete,
 ]

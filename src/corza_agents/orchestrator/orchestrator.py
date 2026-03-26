@@ -92,11 +92,14 @@ class Orchestrator:
         # Sub-agent runner
         self._sub_agent_runner = SubAgentRunner(self._engine)
 
-        # Register built-in tools
+        # Register built-in tools (skip any already registered by the caller
+        # to allow applications to provide their own implementations)
         if auto_register_builtins:
             for builtin_fn in BUILTIN_TOOLS:
                 if hasattr(builtin_fn, "tool_definition"):
-                    self._tools.register(builtin_fn.tool_definition)
+                    td = builtin_fn.tool_definition
+                    if not self._tools.has(td.name):
+                        self._tools.register(td)
 
         # Wire the manage_agent tool
         self._wire_delegation_tool()
