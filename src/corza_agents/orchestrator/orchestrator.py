@@ -350,12 +350,38 @@ class Orchestrator:
             on_spawn = ctx.metadata.get("on_subagent_spawn") if ctx and ctx.metadata else None
             on_event = ctx.metadata.get("on_subagent_event") if ctx and ctx.metadata else None
 
-            child_session_id = None
-            event_callback = None
-
+            # ── External dispatch mode ──────────────────────────────────
+            # If on_subagent_spawn returns a dict, the caller has FULLY
+            # handled the dispatch (e.g. created a background task with its
+            # own streaming, DB persistence, etc.). We return the result
+            # directly — do NOT run the sub-agent inline via runner.run(),
+            # which would execute it a second time.
             if on_spawn:
-                child_session_id = await on_spawn(agent_name, task, parent_sid)
+                spawn_result = await on_spawn(agent_name, task, parent_sid)
+                if isinstance(spawn_result, dict):
+                    log.info("agent_dispatched_externally",
+                             agent_name=agent_name,
+                             task_id=spawn_result.get("task_id", "?"))
+                    return {
+                        "status": "dispatched",
+                        "message": (
+                            f"Task '{spawn_result.get('title', task[:80])}' has been dispatched "
+                            f"and is running in the background (task_id: {spawn_result.get('task_id', '?')}). "
+                            f"Results will appear when the task completes. "
+                            f"Do NOT re-spawn this task — it is already running. "
+                            f"Move on to your next plan item or wait for results."
+                        ),
+                        **spawn_result,
+                    }
+                # String return = session_id for inline execution (original behavior)
+                child_session_id = spawn_result
+            else:
+                child_session_id = None
 
+            # ── Inline execution mode ───────────────────────────────────
+            # No external dispatch — run the sub-agent inline via the
+            # framework's SubAgentRunner. Blocks until the sub-agent completes.
+            event_callback = None
             if on_event and child_session_id:
                 cid = child_session_id
                 async def event_callback(event):

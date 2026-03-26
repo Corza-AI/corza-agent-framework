@@ -456,6 +456,17 @@ class AgentEngine:
                 for mw in self._middleware:
                     await mw.on_turn_complete(turn, context)
 
+                # ── Working memory stop signals ────────────────────────
+                # Tools like task_complete / session_complete set flags in
+                # working memory to signal "I'm done — stop the loop."
+                # Without this, the engine runs another turn and the LLM
+                # re-generates its report text, causing duplication.
+                if working_memory.get("_task_complete") or working_memory.get("_session_complete"):
+                    log.info("stop_signal_detected", session_id=session_id, turn=turn,
+                             task_complete=bool(working_memory.get("_task_complete")),
+                             session_complete=bool(working_memory.get("_session_complete")))
+                    break  # Exit loop → finalize session
+
                 # ── Context health monitoring ──────────────────────────
                 health_config = agent_def.metadata.get("context_health")
                 if isinstance(health_config, ContextHealthConfig):
