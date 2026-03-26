@@ -109,18 +109,22 @@ def tool_executing(session_id: str, tool_name: str, tool_call_id: str,
 
 def tool_result_event(session_id: str, tool_name: str, tool_call_id: str,
                       status: str, duration_ms: float, output_preview: str = "",
-                      turn: int = 0) -> StreamEvent:
+                      turn: int = 0,
+                      card_data: dict | None = None) -> StreamEvent:
+    data = {
+        "tool_name": tool_name,
+        "tool_call_id": tool_call_id,
+        "status": status,
+        "duration_ms": duration_ms,
+        "output_preview": output_preview,
+    }
+    if card_data:
+        data["card_data"] = card_data
     return StreamEvent(
         type=EventType.TOOL_RESULT,
         session_id=session_id,
         turn_number=turn,
-        data={
-            "tool_name": tool_name,
-            "tool_call_id": tool_call_id,
-            "status": status,
-            "duration_ms": duration_ms,
-            "output_preview": output_preview,
-        },
+        data=data,
     )
 
 

@@ -439,10 +439,17 @@ class AgentEngine:
                     await self._repo.add_message(tool_msg)
 
                     output_preview = str(output_content) if output_content else ""
+                    # Extract card_data for frontend tool card rendering.
+                    # Tools return ToolOutput with card_data dict containing
+                    # structured results (query, code, results, etc.)
+                    _card_data = None
+                    if isinstance(result.output, dict):
+                        _card_data = result.output.get("card_data")
                     yield tool_result_event(
                         session_id, tc.tool_name, tc.id,
                         result.status.value, result.duration_ms,
                         output_preview, turn,
+                        card_data=_card_data,
                     )
 
                 yield turn_completed(session_id, turn, "tool_use")

@@ -210,7 +210,7 @@ async def manage_plan(
         entry = {"id": str(len(plan) + 1), "item": item, "status": "pending"}
         plan.append(entry)
         wm.store("_plan", plan)
-        return {"status": "success", "action": "added", "entry": entry, "total": len(plan)}
+        return {"status": "success", "action": "added", "entry": entry, "total": len(plan), "plan": plan}
 
     if action == "update":
         idx = _resolve_index(item_id, plan)
@@ -221,7 +221,7 @@ async def manage_plan(
         if status:
             plan[idx]["status"] = status
         wm.store("_plan", plan)
-        return {"status": "success", "action": "updated", "entry": plan[idx]}
+        return {"status": "success", "action": "updated", "entry": plan[idx], "plan": plan}
 
     if action == "complete":
         idx = _resolve_index(item_id, plan)
@@ -232,7 +232,7 @@ async def manage_plan(
         remaining = [p for p in plan if p["status"] != "done"]
         return {
             "status": "success", "action": "completed", "entry": plan[idx],
-            "remaining": len(remaining), "total": len(plan),
+            "remaining": len(remaining), "total": len(plan), "plan": plan,
         }
 
     if action == "remove":
@@ -243,12 +243,12 @@ async def manage_plan(
         for i, p in enumerate(plan):
             p["id"] = str(i + 1)
         wm.store("_plan", plan)
-        return {"status": "success", "action": "removed", "removed": removed}
+        return {"status": "success", "action": "removed", "removed": removed, "plan": plan}
 
     if action == "clear":
         count = len(plan)
         wm.store("_plan", [])
-        return {"status": "success", "action": "cleared", "items_removed": count}
+        return {"status": "success", "action": "cleared", "items_removed": count, "plan": []}
 
     return {"status": "error", "message": f"Unknown action '{action}'. Use: add, update, complete, remove, clear, list."}
 
