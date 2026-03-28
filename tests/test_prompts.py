@@ -1,14 +1,15 @@
 """Tests for prompt assembly (build_system_prompt and helpers)."""
 
 from corza_agents.core.types import AgentDefinition, ToolSchema
-from corza_agents.prompts.templates import _format_plan, build_system_prompt
+from corza_agents.prompts.templates import _format_plan, build_system_prompt, _OBJECTIVE_MAX_CHARS
 
 # ══════════════════════════════════════════════════════════════════════
-# Section ordering
+# Section ordering: Identity → Principles → Objective → Skills →
+#                   Knowledge → Tools → Notes → Plan
 # ══════════════════════════════════════════════════════════════════════
 
 def test_build_system_prompt_section_ordering():
-    """Sections must appear in the documented order: Objective, Tools, Knowledge, Skills, Working Memory, Plan, Extra."""
+    """Sections must appear in order: Objective, Skills, Knowledge, Tools, Notes, Plan, Extra."""
     agent_def = AgentDefinition(
         name="test-agent",
         system_prompt="You are a test agent.",
@@ -17,7 +18,7 @@ def test_build_system_prompt_section_ordering():
     prompt = build_system_prompt(
         agent_def,
         objective="test objective",
-        knowledge_index=[{"name": "doc1", "size": 100}],
+        knowledge_index=[{"name": "doc1", "description": "Overview of database schema"}],
         skill_index=[{"name": "skill1", "description": "test"}],
         working_memory_context="working mem",
         plan=[{"id": "1", "item": "test", "status": "pending"}],
@@ -26,51 +27,89 @@ def test_build_system_prompt_section_ordering():
     )
 
     idx_objective = prompt.index("## Objective")
-    idx_tools = prompt.index("## Available Tools")
-    idx_knowledge = prompt.index("## Knowledge Library")
-    idx_skills = prompt.index("## Available Skills")
-    idx_memory = prompt.index("## Working Memory")
-    idx_plan = prompt.index("## Active Plan")
+    idx_skills = prompt.index("## Skills")
+    idx_knowledge = prompt.index("## Knowledge")
+    idx_tools = prompt.index("## Tools")
+    idx_notes = prompt.index("## Notes")
+    idx_plan = prompt.index("## Plan")
     idx_extra = prompt.index("## Additional Context")
 
-    assert idx_objective < idx_tools, "Objective must come before Available Tools"
-    assert idx_tools < idx_knowledge, "Available Tools must come before Knowledge Library"
-    assert idx_knowledge < idx_skills, "Knowledge Library must come before Available Skills"
-    assert idx_skills < idx_memory, "Available Skills must come before Working Memory"
-    assert idx_memory < idx_plan, "Working Memory must come before Active Plan"
-    assert idx_plan < idx_extra, "Active Plan must come before Additional Context"
+    assert idx_objective < idx_skills, "Objective must come before Skills"
+    assert idx_skills < idx_knowledge, "Skills must come before Knowledge"
+    assert idx_knowledge < idx_tools, "Knowledge must come before Tools"
+    assert idx_tools < idx_notes, "Tools must come before Notes"
+    assert idx_notes < idx_plan, "Notes must come before Plan"
+    assert idx_plan < idx_extra, "Plan must come before Additional Context"
+
+
+def test_build_system_prompt_no_reference_wrapper():
+    """Skills and Knowledge should be top-level ## sections, not nested under ## Reference."""
+    agent_def = AgentDefinition(name="test-agent")
+
+    prompt = build_system_prompt(
+        agent_def,
+        knowledge_index=[{"name": "doc1", "description": "Overview of database schema"}],
+        skill_index=[{"name": "skill1", "description": "test"}],
+    )
+
+    assert "## Reference" not in prompt, "No Reference wrapper section"
+    assert "### Knowledge" not in prompt, "Knowledge is ## not ###"
+    assert "### Skills" not in prompt, "Skills is ## not ###"
+    assert "## Skills" in prompt
+    assert "## Knowledge" in prompt
+
+
+def test_build_system_prompt_no_framing_line():
+    """No duplicate framing line between identity and context."""
+    agent_def = AgentDefinition(name="test-agent")
+
+    prompt = build_system_prompt(agent_def, objective="test")
+
+    assert "not steps to follow" not in prompt
 
 
 # ══════════════════════════════════════════════════════════════════════
-# Turn count injection
+# Objective truncation
 # ══════════════════════════════════════════════════════════════════════
 
-def test_build_system_prompt_turn_count():
-    """When a plan is present, the turn counter should appear."""
-    agent_def = AgentDefinition(name="counter-agent")
+def test_build_system_prompt_objective_truncation():
+    """Long objectives are truncated to prevent prompt bloat."""
+    agent_def = AgentDefinition(name="test-agent")
+    long_objective = "x" * (_OBJECTIVE_MAX_CHARS + 500)
+
+    prompt = build_system_prompt(agent_def, objective=long_objective)
+
+    assert "truncated" in prompt
+    assert "manage_objective" in prompt
+
+
+def test_build_system_prompt_short_objective_not_truncated():
+    """Short objectives pass through unchanged."""
+    agent_def = AgentDefinition(name="test-agent")
+    short_objective = "Analyze customer churn."
+
+    prompt = build_system_prompt(agent_def, objective=short_objective)
+
+    assert "truncated" not in prompt
+    assert short_objective in prompt
+
+
+# ══════════════════════════════════════════════════════════════════════
+# Plan is a task tracker, not a turn counter
+# ══════════════════════════════════════════════════════════════════════
+
+def test_build_system_prompt_plan_has_no_turn_counter():
+    """Plan section should never include a turn counter — it's a task tracker, not a countdown."""
+    agent_def = AgentDefinition(name="tracker-agent")
 
     prompt = build_system_prompt(
         agent_def,
         plan=[{"id": "1", "item": "task", "status": "pending"}],
-        turn_number=3,
-        max_turns=10,
     )
 
-    assert "Turn 3 of 10" in prompt
-
-
-def test_build_system_prompt_no_turn_count_without_plan():
-    """Without a plan, the turn counter should NOT appear (it lives in the plan section)."""
-    agent_def = AgentDefinition(name="no-plan-agent")
-
-    prompt = build_system_prompt(
-        agent_def,
-        plan=None,
-        turn_number=3,
-        max_turns=10,
-    )
-
-    assert "Turn 3 of 10" not in prompt
+    assert "## Plan" in prompt
+    plan_section = prompt.split("## Plan")[1]
+    assert "(turn" not in plan_section
 
 
 # ══════════════════════════════════════════════════════════════════════

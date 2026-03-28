@@ -284,8 +284,6 @@ class AgentEngine:
                     skill_index=skill_index,
                     objective=objective,
                     plan=plan,
-                    turn_number=turn,
-                    max_turns=agent_def.max_turns,
                 )
                 messages = await self._context_manager.build_context(
                     session_id, system_prompt, agent_def.model, llm=self._llm,
@@ -518,8 +516,6 @@ class AgentEngine:
                             variables=variables or {},
                             objective=objective,
                             plan=working_memory.get("_plan") or [],
-                            turn_number=turn,
-                            max_turns=agent_def.max_turns,
                         )
                         await self._context_manager.build_context(
                             session_id, system_prompt, agent_def.model,
@@ -774,14 +770,21 @@ class AgentEngine:
         """Load the knowledge document listing for prompt injection."""
         try:
             all_memories = await self._repo.list_memories(agent_id, memory_type="document")
-            return [
-                {
-                    "name": m["key"].removeprefix("doc:"),
-                    "size": len(str(m.get("value", ""))),
-                }
-                for m in all_memories
-                if m.get("key", "").startswith("doc:")
-            ]
+            result = []
+            for m in all_memories:
+                if not m.get("key", "").startswith("doc:"):
+                    continue
+                name = m["key"].removeprefix("doc:")
+                value = str(m.get("value", ""))
+                # First non-empty line as summary
+                summary = ""
+                for line in value.splitlines():
+                    stripped = line.strip().lstrip("#").strip()
+                    if stripped:
+                        summary = stripped[:80]
+                        break
+                result.append({"name": name, "description": summary})
+            return result
         except Exception:
             return []
 

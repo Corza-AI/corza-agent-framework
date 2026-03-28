@@ -116,16 +116,12 @@ async def manage_objective(
 @tool(
     name="manage_agent",
     description=(
-        "Full lifecycle management of sub-agents. Two-way communication. "
-        "Actions: "
-        "'spawn' — dispatch ONE sub-agent (blocks until completion, returns result); "
-        "'spawn_parallel' — dispatch MULTIPLE sub-agents concurrently (pass JSON array of "
-        "{agent_name, task} objects in 'tasks' param — runs all in parallel, returns all results); "
-        "'message' — send a follow-up to an existing sub-agent (refine, redirect, ask more); "
-        "'report' — (used BY sub-agents) send interim findings back to the orchestrator; "
-        "'status' — check a sub-agent's current state; "
-        "'list' — show all available sub-agent types. "
-        "Sub-agent sessions persist — the orchestrator can return to them across turns."
+        "Delegate work to sub-agents and receive their results. "
+        "Actions: 'spawn' (dispatch one agent), 'spawn_parallel' (dispatch multiple concurrently — "
+        "pass JSON array of {agent_name, task} objects in 'tasks' param), "
+        "'message' (follow up with an existing agent), 'report' (sub-agents use this to send findings back), "
+        "'status' (check agent state), 'list' (show available agent types). "
+        "Sessions persist — you can return to agents across turns."
     ),
     timeout_seconds=300,
     tags=["orchestration", "delegation"],
@@ -169,11 +165,10 @@ async def manage_agent(
 @tool(
     name="manage_plan",
     description=(
-        "Manage your execution plan (todo list). "
-        "Actions: 'add' (new item), 'update' (change status/description), "
-        "'complete' (mark done), 'remove' (delete item), 'clear' (reset entire plan), 'list' (show all). "
-        "Your plan is your discipline mechanism. Update it after every action. "
-        "It should always reflect what's done, what's in progress, and what remains."
+        "Your discipline mechanism for tracking complex work. "
+        "Break problems into tasks, track what's done, in progress, and remaining. "
+        "Actions: 'add', 'update', 'complete', 'remove', 'clear', 'list'. "
+        "The plan is loaded into your prompt every turn so you always know where you stand."
     ),
     tags=["planning", "self-management"],
 )
