@@ -8,6 +8,7 @@ Pattern: "provider:model" string selects the backend.
 
 No default model — user must specify.
 """
+
 import asyncio
 import json
 import time
@@ -74,23 +75,33 @@ def _messages_to_anthropic(
                     content_blocks.append({"type": "text", "text": text})
             if msg.tool_calls:
                 for tc in msg.tool_calls:
-                    content_blocks.append({
-                        "type": "tool_use",
-                        "id": tc.id,
-                        "name": tc.tool_name,
-                        "input": tc.arguments,
-                    })
+                    content_blocks.append(
+                        {
+                            "type": "tool_use",
+                            "id": tc.id,
+                            "name": tc.tool_name,
+                            "input": tc.arguments,
+                        }
+                    )
             api_messages.append({"role": "assistant", "content": content_blocks or msg.content})
         elif msg.role == MessageRole.TOOL_RESULT:
-            content = msg.content if isinstance(msg.content, str) else json.dumps(msg.content, default=str)
-            pending_tool_results.append({
-                "type": "tool_result",
-                "tool_use_id": msg.tool_call_id,
-                "content": content,
-            })
+            content = (
+                msg.content
+                if isinstance(msg.content, str)
+                else json.dumps(msg.content, default=str)
+            )
+            pending_tool_results.append(
+                {
+                    "type": "tool_result",
+                    "tool_use_id": msg.tool_call_id,
+                    "content": content,
+                }
+            )
 
     _flush_tool_results()
-    system_blocks = [{"type": "text", "text": system_prompt, "cache_control": {"type": "ephemeral"}}]
+    system_blocks = [
+        {"type": "text", "text": system_prompt, "cache_control": {"type": "ephemeral"}}
+    ]
     return api_messages, system_blocks
 
 
@@ -104,7 +115,12 @@ def _messages_to_openai(
         if msg.role == MessageRole.SYSTEM:
             continue
         elif msg.role == MessageRole.USER:
-            api_messages.append({"role": "user", "content": msg.content if isinstance(msg.content, str) else msg.text()})
+            api_messages.append(
+                {
+                    "role": "user",
+                    "content": msg.content if isinstance(msg.content, str) else msg.text(),
+                }
+            )
         elif msg.role == MessageRole.ASSISTANT:
             m: dict[str, Any] = {"role": "assistant"}
             text = msg.text() if isinstance(msg.content, list) else msg.content
@@ -123,12 +139,18 @@ def _messages_to_openai(
                 ]
             api_messages.append(m)
         elif msg.role == MessageRole.TOOL_RESULT:
-            content = msg.content if isinstance(msg.content, str) else json.dumps(msg.content, default=str)
-            api_messages.append({
-                "role": "tool",
-                "tool_call_id": msg.tool_call_id,
-                "content": content,
-            })
+            content = (
+                msg.content
+                if isinstance(msg.content, str)
+                else json.dumps(msg.content, default=str)
+            )
+            api_messages.append(
+                {
+                    "role": "tool",
+                    "tool_call_id": msg.tool_call_id,
+                    "content": content,
+                }
+            )
     return api_messages
 
 
@@ -232,6 +254,7 @@ class AgentLLM:
         if provider in self._api_keys:
             return self._api_keys[provider]
         import os
+
         return os.environ.get(f"{provider.upper()}_API_KEY", "")
 
     async def _get_client(self, provider: str) -> Any:
@@ -241,13 +264,16 @@ class AgentLLM:
             api_key = self._get_api_key(provider)
             if provider == "anthropic":
                 import anthropic
+
                 client = anthropic.AsyncAnthropic(api_key=api_key)
             elif provider == "google":
                 from google import genai
+
                 client = genai.Client(api_key=api_key)
             else:
                 # OpenAI-compatible providers (OpenAI, Groq, DeepSeek, etc.)
                 from openai import AsyncOpenAI
+
                 base_url = (
                     OPENAI_COMPATIBLE_PROVIDERS.get(provider)
                     or self._custom_providers.get(provider)
@@ -281,7 +307,9 @@ class AgentLLM:
             raise LLMError(
                 "No model specified. Set 'model' on AgentDefinition "
                 "(e.g. 'openai:gpt-5.4', 'anthropic:claude-sonnet-4-6', 'ollama:qwen3:8b').",
-                provider="", model="", retryable=False,
+                provider="",
+                model="",
+                retryable=False,
             )
         provider, model_name = _parse_model_string(model)
 
@@ -294,9 +322,13 @@ class AgentLLM:
             response = await self._complete_google(
                 messages, tools, model_name, system_prompt, temperature, max_tokens
             )
-            yield LLMStreamChunk(type="complete", text=response.content,
-                                 tool_call=None, usage=response.usage,
-                                 stop_reason=response.stop_reason)
+            yield LLMStreamChunk(
+                type="complete",
+                text=response.content,
+                tool_call=None,
+                usage=response.usage,
+                stop_reason=response.stop_reason,
+            )
         else:
             async for chunk in self._stream_openai(
                 messages, tools, model_name, system_prompt, temperature, max_tokens, provider
@@ -317,7 +349,9 @@ class AgentLLM:
             raise LLMError(
                 "No model specified. Set 'model' on AgentDefinition "
                 "(e.g. 'openai:gpt-5.4', 'anthropic:claude-sonnet-4-6', 'ollama:qwen3:8b').",
-                provider="", model="", retryable=False,
+                provider="",
+                model="",
+                retryable=False,
             )
         provider, model_name = _parse_model_string(model)
 
@@ -412,7 +446,9 @@ class AgentLLM:
                     cache_read_tokens=getattr(final.usage, "cache_read_input_tokens", 0),
                     total_tokens=final.usage.input_tokens + final.usage.output_tokens,
                 )
-                stop = StopReason.TOOL_USE if final.stop_reason == "tool_use" else StopReason.END_TURN
+                stop = (
+                    StopReason.TOOL_USE if final.stop_reason == "tool_use" else StopReason.END_TURN
+                )
                 yield LLMStreamChunk(type="usage", usage=usage, stop_reason=stop)
 
         except Exception as e:
@@ -449,11 +485,13 @@ class AgentLLM:
             if block.type == "text":
                 text_parts.append(block.text)
             elif block.type == "tool_use":
-                tool_calls.append(ToolCall(
-                    id=block.id,
-                    tool_name=block.name,
-                    arguments=block.input,
-                ))
+                tool_calls.append(
+                    ToolCall(
+                        id=block.id,
+                        tool_name=block.name,
+                        arguments=block.input,
+                    )
+                )
 
         stop = StopReason.TOOL_USE if response.stop_reason == "tool_use" else StopReason.END_TURN
 
@@ -495,9 +533,13 @@ class AgentLLM:
             kwargs["tool_choice"] = "auto"
 
         try:
-            log.debug("llm_stream_request", provider=provider, model=model_name,
-                       tool_count=len(api_tools) if api_tools else 0,
-                       tool_choice=kwargs.get("tool_choice"))
+            log.debug(
+                "llm_stream_request",
+                provider=provider,
+                model=model_name,
+                tool_count=len(api_tools) if api_tools else 0,
+                tool_choice=kwargs.get("tool_choice"),
+            )
             stream = await client.chat.completions.create(**kwargs)
 
             tool_call_buffers: dict[int, dict[str, Any]] = {}
@@ -528,7 +570,9 @@ class AgentLLM:
                         if idx not in tool_call_buffers:
                             tool_call_buffers[idx] = {
                                 "id": tc_delta.id or "",
-                                "name": tc_delta.function.name if tc_delta.function and tc_delta.function.name else "",
+                                "name": tc_delta.function.name
+                                if tc_delta.function and tc_delta.function.name
+                                else "",
                                 "arguments": "",
                             }
                             yield LLMStreamChunk(
@@ -556,16 +600,25 @@ class AgentLLM:
                             ),
                         )
 
-                    stop = StopReason.TOOL_USE if choice.finish_reason == "tool_calls" else StopReason.END_TURN
+                    stop = (
+                        StopReason.TOOL_USE
+                        if choice.finish_reason == "tool_calls"
+                        else StopReason.END_TURN
+                    )
                     yield LLMStreamChunk(
                         type="usage",
                         usage=usage_info or LLMUsage(),
                         stop_reason=stop,
                     )
 
-            log.info("llm_stream_complete", provider=provider, model=model_name,
-                      has_content=has_content, has_tool_calls=has_tool_calls,
-                      tool_call_count=len(tool_call_buffers))
+            log.info(
+                "llm_stream_complete",
+                provider=provider,
+                model=model_name,
+                has_content=has_content,
+                has_tool_calls=has_tool_calls,
+                tool_call_count=len(tool_call_buffers),
+            )
 
         except Exception as e:
             self._handle_provider_error(provider, model_name, e)
@@ -603,11 +656,13 @@ class AgentLLM:
                     args = json.loads(tc.function.arguments) if tc.function.arguments else {}
                 except json.JSONDecodeError:
                     args = {}
-                tool_calls.append(ToolCall(
-                    id=tc.id,
-                    tool_name=tc.function.name,
-                    arguments=args,
-                ))
+                tool_calls.append(
+                    ToolCall(
+                        id=tc.id,
+                        tool_name=tc.function.name,
+                        arguments=args,
+                    )
+                )
 
         stop = StopReason.TOOL_USE if choice.finish_reason == "tool_calls" else StopReason.END_TURN
 
@@ -638,25 +693,39 @@ class AgentLLM:
         contents = []
         for msg in messages:
             if msg.role == MessageRole.USER:
-                contents.append(types.Content(
-                    role="user",
-                    parts=[types.Part(text=msg.text() if isinstance(msg.content, list) else msg.content)],
-                ))
+                contents.append(
+                    types.Content(
+                        role="user",
+                        parts=[
+                            types.Part(
+                                text=msg.text() if isinstance(msg.content, list) else msg.content
+                            )
+                        ],
+                    )
+                )
             elif msg.role == MessageRole.ASSISTANT:
-                contents.append(types.Content(
-                    role="model",
-                    parts=[types.Part(text=msg.text() if isinstance(msg.content, list) else msg.content)],
-                ))
+                contents.append(
+                    types.Content(
+                        role="model",
+                        parts=[
+                            types.Part(
+                                text=msg.text() if isinstance(msg.content, list) else msg.content
+                            )
+                        ],
+                    )
+                )
 
         gemini_tools = []
         if tools:
             function_declarations = []
             for t in tools:
-                function_declarations.append(types.FunctionDeclaration(
-                    name=t.name,
-                    description=t.description,
-                    parameters=t.parameters,
-                ))
+                function_declarations.append(
+                    types.FunctionDeclaration(
+                        name=t.name,
+                        description=t.description,
+                        parameters=t.parameters,
+                    )
+                )
             gemini_tools = [types.Tool(function_declarations=function_declarations)]
 
         start = time.time()
@@ -684,10 +753,14 @@ class AgentLLM:
                 if part.text:
                     text_parts.append(part.text)
                 elif part.function_call:
-                    tool_calls.append(ToolCall(
-                        tool_name=part.function_call.name,
-                        arguments=dict(part.function_call.args) if part.function_call.args else {},
-                    ))
+                    tool_calls.append(
+                        ToolCall(
+                            tool_name=part.function_call.name,
+                            arguments=dict(part.function_call.args)
+                            if part.function_call.args
+                            else {},
+                        )
+                    )
 
         stop = StopReason.TOOL_USE if tool_calls else StopReason.END_TURN
         usage_meta = response.usage_metadata
@@ -712,16 +785,16 @@ class AgentLLM:
         error_str = str(error).lower()
 
         if "rate" in error_str and "limit" in error_str:
-            raise LLMRateLimitError(
-                str(error), provider=provider, model=model
-            ) from error
+            raise LLMRateLimitError(str(error), provider=provider, model=model) from error
 
-        if "context" in error_str and ("length" in error_str or "window" in error_str or "overflow" in error_str):
-            raise ContextOverflowError(
-                str(error), provider=provider, model=model
-            ) from error
+        if "context" in error_str and (
+            "length" in error_str or "window" in error_str or "overflow" in error_str
+        ):
+            raise ContextOverflowError(str(error), provider=provider, model=model) from error
 
         raise LLMError(
-            str(error), provider=provider, model=model,
+            str(error),
+            provider=provider,
+            model=model,
             retryable="timeout" in error_str or "connection" in error_str,
         ) from error

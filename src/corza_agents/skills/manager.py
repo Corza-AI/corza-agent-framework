@@ -8,6 +8,7 @@ the tools needed to execute it.
 System Prompt = Principles (who the agent is)
 Skills        = Procedures (what to do)
 """
+
 import asyncio
 import inspect
 from collections.abc import Callable
@@ -132,6 +133,7 @@ class SkillsManager:
             required_tools: Tools needed by this skill.
         """
         import aiohttp
+
         async with aiohttp.ClientSession() as session:
             async with session.get(url) as response:
                 response.raise_for_status()
@@ -172,6 +174,4 @@ class SkillsManager:
                 description=result.get("description", ""),
             )
         else:
-            raise ValueError(
-                f"query_fn must return str or dict, got {type(result).__name__}"
-            )
+            raise ValueError(f"query_fn must return str or dict, got {type(result).__name__}")

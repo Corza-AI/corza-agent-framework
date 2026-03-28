@@ -7,6 +7,7 @@ Middleware hook system for agent lifecycle events.
 Middleware is applied in order: first registered = first to run.
 Each method receives the current state and can modify/inspect it.
 """
+
 from typing import Protocol, runtime_checkable
 
 from corza_agents.core.types import (
@@ -130,10 +131,8 @@ class BaseMiddleware:
     ) -> ToolResult:
         return result
 
-    async def on_turn_complete(self, turn_number: int,
-                                context: ExecutionContext) -> None:
+    async def on_turn_complete(self, turn_number: int, context: ExecutionContext) -> None:
         pass
 
-    async def on_error(self, error: Exception,
-                       context: ExecutionContext) -> None:
+    async def on_error(self, error: Exception, context: ExecutionContext) -> None:
         pass

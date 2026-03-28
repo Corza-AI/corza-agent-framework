@@ -3,6 +3,7 @@ Corza Agent Framework — Abstract Repository Interface
 
 Defines the contract all persistence backends must implement.
 """
+
 from abc import ABC, abstractmethod
 from typing import Any
 
@@ -40,8 +41,11 @@ class BaseRepository(ABC):
 
     @abstractmethod
     async def get_sessions_for_user(
-        self, user_id: str, tenant_id: str = "",
-        status: str | None = None, limit: int = 50,
+        self,
+        user_id: str,
+        tenant_id: str = "",
+        status: str | None = None,
+        limit: int = 50,
     ) -> list[AgentSession]: ...
 
     @abstractmethod
@@ -52,7 +56,9 @@ class BaseRepository(ABC):
         return []
 
     async def purge_old_sessions(
-        self, max_age_hours: int = 168, statuses: list[str] | None = None,
+        self,
+        max_age_hours: int = 168,
+        statuses: list[str] | None = None,
     ) -> int:
         """
         Delete sessions older than max_age_hours. Override in subclasses for
@@ -69,12 +75,16 @@ class BaseRepository(ABC):
 
     @abstractmethod
     async def get_messages(
-        self, session_id: str, include_summarized: bool = False,
+        self,
+        session_id: str,
+        include_summarized: bool = False,
     ) -> list[AgentMessage]: ...
 
     @abstractmethod
     async def mark_messages_summarized(
-        self, session_id: str, message_ids: list[str],
+        self,
+        session_id: str,
+        message_ids: list[str],
     ) -> None: ...
 
     # ══════════════════════════════════════════════════════════════════
@@ -112,7 +122,9 @@ class BaseRepository(ABC):
 
     @abstractmethod
     async def get_artifacts(
-        self, session_id: str, artifact_type: str | None = None,
+        self,
+        session_id: str,
+        artifact_type: str | None = None,
     ) -> list[dict]: ...
 
     # ══════════════════════════════════════════════════════════════════
@@ -155,5 +167,7 @@ class BaseRepository(ABC):
 
     @abstractmethod
     async def list_memories(
-        self, agent_id: str, memory_type: str | None = None,
+        self,
+        agent_id: str,
+        memory_type: str | None = None,
     ) -> list[dict]: ...

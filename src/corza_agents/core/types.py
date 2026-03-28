@@ -4,6 +4,7 @@ Corza Agent Framework — Core Types
 All Pydantic models for the framework. These are the fundamental types
 that every other module builds on.
 """
+
 import uuid
 from datetime import UTC, datetime
 from enum import Enum
@@ -14,6 +15,7 @@ from pydantic import BaseModel, Field
 # ══════════════════════════════════════════════════════════════════════
 # Enums
 # ══════════════════════════════════════════════════════════════════════
+
 
 class SessionStatus(str, Enum):
     IDLE = "idle"
@@ -85,8 +87,10 @@ def _now() -> datetime:
 # Tool Models
 # ══════════════════════════════════════════════════════════════════════
 
+
 class ToolCall(BaseModel):
     """A tool invocation requested by the LLM."""
+
     id: str = Field(default_factory=_uuid)
     tool_name: str
     arguments: dict[str, Any] = Field(default_factory=dict)
@@ -94,6 +98,7 @@ class ToolCall(BaseModel):
 
 class ToolResult(BaseModel):
     """The result of executing a tool."""
+
     tool_call_id: str
     tool_name: str
     output: Any = None
@@ -104,6 +109,7 @@ class ToolResult(BaseModel):
 
 class ToolParameterSpec(BaseModel):
     """Schema for a single tool parameter."""
+
     name: str
     type: str = "string"
     description: str = ""
@@ -117,6 +123,7 @@ class ToolSchema(BaseModel):
     LLM-facing tool definition — the JSON Schema the model sees.
     Provider adapters convert this to Anthropic/OpenAI/etc format.
     """
+
     name: str
     description: str
     parameters: dict[str, Any] = Field(default_factory=dict)
@@ -124,6 +131,7 @@ class ToolSchema(BaseModel):
 
 class RegisteredTool(BaseModel):
     """A tool registered in the ToolRegistry."""
+
     name: str
     description: str
     tool_type: ToolType = ToolType.FUNCTION
@@ -174,8 +182,10 @@ class RegisteredTool(BaseModel):
 # Message Models
 # ══════════════════════════════════════════════════════════════════════
 
+
 class AgentMessage(BaseModel):
     """A single message in the conversation."""
+
     id: str = Field(default_factory=_uuid)
     session_id: str = ""
     role: MessageRole
@@ -203,6 +213,7 @@ class AgentMessage(BaseModel):
 # Session Models
 # ══════════════════════════════════════════════════════════════════════
 
+
 class UserContext(BaseModel):
     """
     User/tenant context passed through from the web app.
@@ -211,6 +222,7 @@ class UserContext(BaseModel):
     pass-through context that scopes sessions, messages, and memory
     to the right user and tenant.
     """
+
     user_id: str = ""
     tenant_id: str = ""
     org_id: str = ""
@@ -219,6 +231,7 @@ class UserContext(BaseModel):
 
 class AgentSession(BaseModel):
     """Top-level container for an agent run, scoped to a user and tenant."""
+
     id: str = Field(default_factory=_uuid)
     agent_id: str = ""
     user_id: str = ""
@@ -241,6 +254,7 @@ class AgentSession(BaseModel):
 # Agent Definition
 # ══════════════════════════════════════════════════════════════════════
 
+
 class AgentDefinition(BaseModel):
     """
     Declarative agent configuration.
@@ -248,21 +262,22 @@ class AgentDefinition(BaseModel):
     Defines everything an agent needs: model, tools, skills, prompts,
     knowledge files, sub-agents it can spawn, and constraints.
     """
+
     id: str = Field(default_factory=_uuid)
     name: str
     description: str = ""
     objective: str = Field(
         default="",
         description="The agent's mission / purpose / north star (like CLAUDE.md or Soul.md). "
-                    "Auto-loaded into the system prompt every turn. "
-                    "Used as the initial seed — the agent can refine it at runtime via manage_objective.",
+        "Auto-loaded into the system prompt every turn. "
+        "Used as the initial seed — the agent can refine it at runtime via manage_objective.",
     )
     system_prompt: str = ""
     model: str = ""
     fallback_models: list[str] = Field(
         default_factory=list,
         description="Fallback models tried in order if primary fails. "
-                    "E.g. ['groq:llama-3.3-70b', 'cerebras:llama-3.3-70b']",
+        "E.g. ['groq:llama-3.3-70b', 'cerebras:llama-3.3-70b']",
     )
     tools: list[str] = Field(default_factory=list)
     skills: list[str] = Field(default_factory=list)
@@ -289,6 +304,7 @@ class AgentDefinition(BaseModel):
 # Skill
 # ══════════════════════════════════════════════════════════════════════
 
+
 class Skill(BaseModel):
     """
     Reusable agent capability = prompt template + required tools + config.
@@ -297,6 +313,7 @@ class Skill(BaseModel):
     They can define which tools are needed, and provide Jinja2 templates
     with variables resolved at runtime.
     """
+
     id: str = Field(default_factory=_uuid)
     name: str
     version: str = "1.0"
@@ -311,8 +328,10 @@ class Skill(BaseModel):
 # LLM Response Types
 # ══════════════════════════════════════════════════════════════════════
 
+
 class LLMUsage(BaseModel):
     """Token usage from an LLM call."""
+
     input_tokens: int = 0
     output_tokens: int = 0
     cache_creation_tokens: int = 0
@@ -322,7 +341,10 @@ class LLMUsage(BaseModel):
 
 class LLMStreamChunk(BaseModel):
     """A single chunk from a streaming LLM response."""
-    type: str  # "text_delta", "tool_call_start", "tool_call_delta", "tool_call_end", "usage", "stop"
+
+    type: (
+        str  # "text_delta", "tool_call_start", "tool_call_delta", "tool_call_end", "usage", "stop"
+    )
     text: str | None = None
     tool_call: ToolCall | None = None
     tool_call_id: str | None = None
@@ -334,6 +356,7 @@ class LLMStreamChunk(BaseModel):
 
 class LLMResponse(BaseModel):
     """Complete (non-streaming) LLM response."""
+
     content: str = ""
     tool_calls: list[ToolCall] = Field(default_factory=list)
     stop_reason: StopReason = StopReason.END_TURN
@@ -346,8 +369,10 @@ class LLMResponse(BaseModel):
 # Sub-Agent Result
 # ══════════════════════════════════════════════════════════════════════
 
+
 class SubAgentResult(BaseModel):
     """Result returned by a sub-agent to its parent."""
+
     child_session_id: str
     output: str = ""
     data: dict[str, Any] = Field(default_factory=dict)
@@ -361,6 +386,7 @@ class SubAgentResult(BaseModel):
 # Execution Context (passed to tools, middleware, hooks)
 # ══════════════════════════════════════════════════════════════════════
 
+
 class ExecutionContext(BaseModel):
     """
     Runtime context available to tools, middleware, and hooks.
@@ -370,6 +396,7 @@ class ExecutionContext(BaseModel):
     The framework never handles auth — your app authenticates, then passes
     the identity here so tools, middleware, and persistence are scoped correctly.
     """
+
     session_id: str = ""
     agent_id: str = ""
     agent_name: str = ""
@@ -394,7 +421,4 @@ class ExecutionContext(BaseModel):
 
     def remove_skill(self, skill_name: str) -> None:
         """Remove a skill mid-session by name."""
-        self.active_skills = [
-            s for s in self.active_skills
-            if getattr(s, "name", "") != skill_name
-        ]
+        self.active_skills = [s for s in self.active_skills if getattr(s, "name", "") != skill_name]

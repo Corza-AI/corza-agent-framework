@@ -10,6 +10,7 @@ Usage:
     app = create_app(agents={"assistant": assistant})
     # Run with: uvicorn myapp:app
 """
+
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from typing import Any

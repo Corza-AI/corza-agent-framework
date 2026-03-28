@@ -9,6 +9,7 @@ Execution handlers for non-function tool types:
 
 Mirrors Sentinel tool_registry.py patterns but async and generalized.
 """
+
 import asyncio
 import json
 import sys
@@ -35,6 +36,7 @@ log = structlog.get_logger("corza_agents.tools.handlers")
 # ══════════════════════════════════════════════════════════════════════
 # API Tool Handler
 # ══════════════════════════════════════════════════════════════════════
+
 
 async def execute_api_tool(
     tool_def: RegisteredTool,
@@ -123,7 +125,12 @@ async def execute_api_tool(
 
 
 async def _handle_pagination(
-    session, method, base_kwargs, first_page, pagination_config, headers,
+    session,
+    method,
+    base_kwargs,
+    first_page,
+    pagination_config,
+    headers,
     max_pages: int = 10,
 ) -> dict:
     """Handle API pagination — accumulate results across pages."""
@@ -161,6 +168,7 @@ def _build_auth_headers(vault_data: dict) -> dict[str, str]:
         return {header_name: vault_data.get("api_key", "")}
     elif auth_type == "basic":
         import base64
+
         username = vault_data.get("username", "")
         password = vault_data.get("password", "")
         encoded = base64.b64encode(f"{username}:{password}".encode()).decode()
@@ -168,7 +176,9 @@ def _build_auth_headers(vault_data: dict) -> dict[str, str]:
     return {}
 
 
-async def _resolve_vault(vault_resolver: Any, vault_id: str, context: ExecutionContext) -> dict | None:
+async def _resolve_vault(
+    vault_resolver: Any, vault_id: str, context: ExecutionContext
+) -> dict | None:
     """Resolve vault credentials. Supports both sync and async resolvers."""
     try:
         if asyncio.iscoroutinefunction(vault_resolver):
@@ -182,6 +192,7 @@ async def _resolve_vault(vault_resolver: Any, vault_id: str, context: ExecutionC
 # ══════════════════════════════════════════════════════════════════════
 # DB Query Tool Handler
 # ══════════════════════════════════════════════════════════════════════
+
 
 async def execute_db_query_tool(
     tool_def: RegisteredTool,
@@ -223,9 +234,7 @@ async def execute_db_query_tool(
         )
 
     # Execute query
-    return await asyncio.to_thread(
-        _run_sql_query, db_url, sql_query, args, max_rows, read_only
-    )
+    return await asyncio.to_thread(_run_sql_query, db_url, sql_query, args, max_rows, read_only)
 
 
 def _build_db_url(vault_data: dict, db_type: str) -> str:
@@ -237,8 +246,7 @@ def _build_db_url(vault_data: dict, db_type: str) -> str:
     return f"{db_type}://{username}:{password}@{host}:{port}/{database}"
 
 
-def _run_sql_query(db_url: str, sql: str, params: dict,
-                   max_rows: int, read_only: bool) -> dict:
+def _run_sql_query(db_url: str, sql: str, params: dict, max_rows: int, read_only: bool) -> dict:
     """Execute SQL query synchronously (runs in thread pool)."""
     from sqlalchemy import create_engine, text
 
@@ -268,6 +276,7 @@ def _run_sql_query(db_url: str, sql: str, params: dict,
 # Workflow Tool Handler
 # ══════════════════════════════════════════════════════════════════════
 
+
 async def execute_workflow_tool(
     tool_def: RegisteredTool,
     args: dict[str, Any],
@@ -289,7 +298,9 @@ async def execute_workflow_tool(
         raise ToolExecutionError("No workflow_id in tool config", tool_name=tool_def.name)
 
     input_mapping = config.get("input_mapping", {})
-    api_base_url = config.get("api_base_url") or context.metadata.get("workflow_api_url", "http://127.0.0.1:2222")
+    api_base_url = config.get("api_base_url") or context.metadata.get(
+        "workflow_api_url", "http://127.0.0.1:2222"
+    )
     wait = config.get("wait_for_completion", False)
     timeout = config.get("timeout_seconds", 120)
 
@@ -304,6 +315,7 @@ async def execute_workflow_tool(
         workflow_input = args
 
     import aiohttp
+
     async with aiohttp.ClientSession() as session:
         trigger_url = f"{api_base_url.rstrip('/')}/api/v1/workflows/{workflow_id}/execute"
         async with session.post(trigger_url, json={"input": workflow_input}) as resp:
@@ -316,7 +328,11 @@ async def execute_workflow_tool(
             result = await resp.json()
 
         if not wait:
-            return {"status": "triggered", "execution_id": result.get("id"), "workflow_id": workflow_id}
+            return {
+                "status": "triggered",
+                "execution_id": result.get("id"),
+                "workflow_id": workflow_id,
+            }
 
         # Poll for completion
         execution_id = result.get("id")
@@ -339,6 +355,7 @@ async def execute_workflow_tool(
 # ══════════════════════════════════════════════════════════════════════
 # Code Execution Tool Handler
 # ══════════════════════════════════════════════════════════════════════
+
 
 async def execute_code_tool(
     tool_def: RegisteredTool,
@@ -368,6 +385,7 @@ async def execute_code_tool(
 
     # Safety gate: require explicit opt-in via environment variable
     import os
+
     if os.environ.get("CORZA_ALLOW_CODE_EXECUTION", "").lower() not in ("true", "1", "yes"):
         return {
             "status": "error",
@@ -379,11 +397,13 @@ async def execute_code_tool(
             ),
         }
 
-    log.warning("code_execution",
-                tool_name=tool_def.name,
-                code_length=len(code),
-                timeout=timeout,
-                sandbox_mode=sandbox_mode)
+    log.warning(
+        "code_execution",
+        tool_name=tool_def.name,
+        code_length=len(code),
+        timeout=timeout,
+        sandbox_mode=sandbox_mode,
+    )
 
     # Build input data for the sandbox
     input_data = json.dumps(args, default=str)
@@ -393,9 +413,7 @@ async def execute_code_tool(
     elif sandbox_mode == "docker":
         return await _run_in_docker(code, input_data, timeout)
     else:
-        raise ToolExecutionError(
-            f"Unknown sandbox_mode: {sandbox_mode}", tool_name=tool_def.name
-        )
+        raise ToolExecutionError(f"Unknown sandbox_mode: {sandbox_mode}", tool_name=tool_def.name)
 
 
 async def _run_in_subprocess(code: str, input_data: str, timeout: int) -> dict:
@@ -413,7 +431,8 @@ input_data = json.loads(sys.stdin.read())
 
     try:
         proc = await asyncio.create_subprocess_exec(
-            sys.executable, tmp_path,
+            sys.executable,
+            tmp_path,
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
@@ -449,6 +468,7 @@ input_data = json.loads(sys.stdin.read())
 
     finally:
         import os
+
         try:
             os.unlink(tmp_path)
         except OSError:

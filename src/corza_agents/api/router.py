@@ -16,6 +16,7 @@ Usage:
     router = create_agent_router(orchestrator, agent_definitions)
     app.include_router(router, prefix="/api/agent")
 """
+
 import uuid
 
 import structlog
@@ -54,8 +55,13 @@ def _error_response(
 ) -> JSONResponse:
     """Build a structured error response with a unique error_id."""
     error_id = str(uuid.uuid4())[:12]
-    log.error("api_error", error_id=error_id, status=status_code,
-              error_type=error_type, message=message[:500])
+    log.error(
+        "api_error",
+        error_id=error_id,
+        status=status_code,
+        error_type=error_type,
+        message=message[:500],
+    )
     return JSONResponse(
         status_code=status_code,
         content=ErrorResponse(
@@ -187,29 +193,40 @@ def create_agent_router(
 
         if session.status not in (SessionStatus.WAITING_INPUT, SessionStatus.FAILED):
             return _error_response(
-                409, f"Session is {session.status.value}, not resumable. "
-                     f"Only WAITING_INPUT or FAILED sessions can be resumed.",
+                409,
+                f"Session is {session.status.value}, not resumable. "
+                f"Only WAITING_INPUT or FAILED sessions can be resumed.",
                 "conflict",
             )
 
         # Reset session to allow new messages
         await orchestrator.repo.update_session(
-            session_id, status=SessionStatus.IDLE, error=None,
+            session_id,
+            status=SessionStatus.IDLE,
+            error=None,
         )
 
         if req.stream:
             events = service.send_message(
-                session_id, req.content, req.metadata, req.variables,
+                session_id,
+                req.content,
+                req.metadata,
+                req.variables,
             )
             return await sse_response(request, events)
         else:
             final_output, final_error = await service.send_message_sync(
-                session_id, req.content, req.metadata, req.variables,
+                session_id,
+                req.content,
+                req.metadata,
+                req.variables,
             )
             if final_error:
                 return _error_response(500, final_error, "agent_error", recoverable=True)
             return SendMessageResponse(
-                session_id=session_id, status="completed", message=final_output,
+                session_id=session_id,
+                status="completed",
+                message=final_output,
             )
 
     # ══════════════════════════════════════════════════════════════
@@ -226,17 +243,25 @@ def create_agent_router(
         try:
             if req.stream:
                 events = service.send_message(
-                    session_id, req.content, req.metadata, req.variables,
+                    session_id,
+                    req.content,
+                    req.metadata,
+                    req.variables,
                 )
                 return await sse_response(request, events)
             else:
                 final_output, final_error = await service.send_message_sync(
-                    session_id, req.content, req.metadata, req.variables,
+                    session_id,
+                    req.content,
+                    req.metadata,
+                    req.variables,
                 )
                 if final_error:
                     return _error_response(500, final_error, "agent_error", recoverable=True)
                 return SendMessageResponse(
-                    session_id=session_id, status="completed", message=final_output,
+                    session_id=session_id,
+                    status="completed",
+                    message=final_output,
                 )
         except KeyError as e:
             return _error_response(404, str(e), "not_found")
@@ -252,7 +277,7 @@ def create_agent_router(
     ):
         """Get message history with pagination."""
         messages = await service.get_messages(session_id, include_summarized)
-        paginated = messages[offset:offset + limit]
+        paginated = messages[offset : offset + limit]
         return [
             MessageResponse(
                 id=m.id,

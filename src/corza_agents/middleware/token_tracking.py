@@ -55,7 +55,9 @@ class TokenTrackingMiddleware(BaseMiddleware):
         sid = context.session_id
         if sid not in self._session_totals:
             self._session_totals[sid] = {
-                "input_tokens": 0, "output_tokens": 0, "cost_usd": 0.0,
+                "input_tokens": 0,
+                "output_tokens": 0,
+                "cost_usd": 0.0,
             }
 
         totals = self._session_totals[sid]
@@ -74,13 +76,15 @@ class TokenTrackingMiddleware(BaseMiddleware):
             total_cost_usd=totals["cost_usd"],
         )
 
-        log.debug("token_usage",
-                  session_id=sid,
-                  turn=context.turn_number,
-                  input_tokens=response.usage.input_tokens,
-                  output_tokens=response.usage.output_tokens,
-                  cumulative_input=totals["input_tokens"],
-                  cumulative_output=totals["output_tokens"],
-                  cumulative_cost=f"${totals['cost_usd']:.4f}")
+        log.debug(
+            "token_usage",
+            session_id=sid,
+            turn=context.turn_number,
+            input_tokens=response.usage.input_tokens,
+            output_tokens=response.usage.output_tokens,
+            cumulative_input=totals["input_tokens"],
+            cumulative_output=totals["output_tokens"],
+            cumulative_cost=f"${totals['cost_usd']:.4f}",
+        )
 
         return response

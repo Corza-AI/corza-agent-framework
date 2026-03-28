@@ -21,6 +21,7 @@ Built-in tools:
 - manage_skill:      Reusable procedures (persistent, self-optimizing)
 - manage_context:    Manually trigger context compaction
 """
+
 import json
 
 from corza_agents.core.types import ExecutionContext
@@ -78,7 +79,8 @@ async def manage_objective(
         value = await ctx.repository.get_memory(agent_id, key)
         if value is None:
             return {
-                "status": "success", "content": None,
+                "status": "success",
+                "content": None,
                 "message": "No objective set. Use manage_objective(action='write') to define your mission.",
             }
         text = value if isinstance(value, str) else json.dumps(value, default=str)
@@ -88,8 +90,11 @@ async def manage_objective(
         if not content:
             return {"status": "error", "message": "Provide 'content' for the objective."}
         await ctx.repository.set_memory(
-            agent_id, key, content,
-            memory_type="objective", session_id=ctx.session_id,
+            agent_id,
+            key,
+            content,
+            memory_type="objective",
+            session_id=ctx.session_id,
         )
         return {"status": "success", "action": "written", "size": len(content)}
 
@@ -101,8 +106,11 @@ async def manage_objective(
         separator = "\n\n" if existing_str else ""
         updated = existing_str + separator + content
         await ctx.repository.set_memory(
-            agent_id, key, updated,
-            memory_type="objective", session_id=ctx.session_id,
+            agent_id,
+            key,
+            updated,
+            memory_type="objective",
+            session_id=ctx.session_id,
         )
         return {"status": "success", "action": "appended", "size": len(updated)}
 
@@ -112,6 +120,7 @@ async def manage_objective(
 # ══════════════════════════════════════════════════════════════════════
 # Delegation
 # ══════════════════════════════════════════════════════════════════════
+
 
 @tool(
     name="manage_agent",
@@ -154,13 +163,14 @@ async def manage_agent(
     return {
         "status": "error",
         "message": "manage_agent requires orchestrator wiring. "
-                   "Use Orchestrator.run() instead of AgentEngine.run() directly.",
+        "Use Orchestrator.run() instead of AgentEngine.run() directly.",
     }
 
 
 # ══════════════════════════════════════════════════════════════════════
 # Plan Management (session-scoped)
 # ══════════════════════════════════════════════════════════════════════
+
 
 @tool(
     name="manage_plan",
@@ -205,7 +215,13 @@ async def manage_plan(
         entry = {"id": str(len(plan) + 1), "item": item, "status": "pending"}
         plan.append(entry)
         wm.store("_plan", plan)
-        return {"status": "success", "action": "added", "entry": entry, "total": len(plan), "plan": plan}
+        return {
+            "status": "success",
+            "action": "added",
+            "entry": entry,
+            "total": len(plan),
+            "plan": plan,
+        }
 
     if action == "update":
         idx = _resolve_index(item_id, plan)
@@ -226,8 +242,12 @@ async def manage_plan(
         wm.store("_plan", plan)
         remaining = [p for p in plan if p["status"] != "done"]
         return {
-            "status": "success", "action": "completed", "entry": plan[idx],
-            "remaining": len(remaining), "total": len(plan), "plan": plan,
+            "status": "success",
+            "action": "completed",
+            "entry": plan[idx],
+            "remaining": len(remaining),
+            "total": len(plan),
+            "plan": plan,
         }
 
     if action == "remove":
@@ -245,7 +265,10 @@ async def manage_plan(
         wm.store("_plan", [])
         return {"status": "success", "action": "cleared", "items_removed": count, "plan": []}
 
-    return {"status": "error", "message": f"Unknown action '{action}'. Use: add, update, complete, remove, clear, list."}
+    return {
+        "status": "error",
+        "message": f"Unknown action '{action}'. Use: add, update, complete, remove, clear, list.",
+    }
 
 
 def _resolve_index(item_id: str, plan: list) -> int | None:
@@ -267,6 +290,7 @@ def _resolve_index(item_id: str, plan: list) -> int | None:
 # ══════════════════════════════════════════════════════════════════════
 # Notes (session-scoped scratch pad)
 # ══════════════════════════════════════════════════════════════════════
+
 
 @tool(
     name="manage_notes",
@@ -315,12 +339,16 @@ async def manage_notes(
         wm.store(key, "")
         return {"status": "success", "action": "cleared"}
 
-    return {"status": "error", "message": f"Unknown action '{action}'. Use: read, write, append, clear."}
+    return {
+        "status": "error",
+        "message": f"Unknown action '{action}'. Use: read, write, append, clear.",
+    }
 
 
 # ══════════════════════════════════════════════════════════════════════
 # Documents (permanently persisted across sessions)
 # ══════════════════════════════════════════════════════════════════════
+
 
 @tool(
     name="manage_knowledge",
@@ -378,8 +406,12 @@ async def manage_knowledge(
             return {"status": "error", "message": "Provide 'name' of document to read."}
         value = await ctx.repository.get_memory(agent_id, doc_prefix + name)
         if value is None:
-            return {"status": "success", "name": name, "content": None,
-                    "message": f"Document '{name}' does not exist yet."}
+            return {
+                "status": "success",
+                "name": name,
+                "content": None,
+                "message": f"Document '{name}' does not exist yet.",
+            }
         doc_content = value if isinstance(value, str) else json.dumps(value, default=str)
         return {"status": "success", "name": name, "content": doc_content, "size": len(doc_content)}
 
@@ -387,8 +419,11 @@ async def manage_knowledge(
         if not name:
             return {"status": "error", "message": "Provide 'name' of document to write."}
         await ctx.repository.set_memory(
-            agent_id, doc_prefix + name, content,
-            memory_type="document", session_id=ctx.session_id,
+            agent_id,
+            doc_prefix + name,
+            content,
+            memory_type="document",
+            session_id=ctx.session_id,
         )
         return {"status": "success", "action": "written", "name": name, "size": len(content)}
 
@@ -400,8 +435,11 @@ async def manage_knowledge(
         separator = "\n" if existing_str else ""
         updated = existing_str + separator + content
         await ctx.repository.set_memory(
-            agent_id, doc_prefix + name, updated,
-            memory_type="document", session_id=ctx.session_id,
+            agent_id,
+            doc_prefix + name,
+            updated,
+            memory_type="document",
+            session_id=ctx.session_id,
         )
         return {"status": "success", "action": "appended", "name": name, "size": len(updated)}
 
@@ -409,17 +447,24 @@ async def manage_knowledge(
         if not name:
             return {"status": "error", "message": "Provide 'name' of document to delete."}
         await ctx.repository.set_memory(
-            agent_id, doc_prefix + name, None,
-            memory_type="document", session_id=ctx.session_id,
+            agent_id,
+            doc_prefix + name,
+            None,
+            memory_type="document",
+            session_id=ctx.session_id,
         )
         return {"status": "success", "action": "deleted", "name": name}
 
-    return {"status": "error", "message": f"Unknown action '{action}'. Use: read, write, append, list, delete."}
+    return {
+        "status": "error",
+        "message": f"Unknown action '{action}'. Use: read, write, append, list, delete.",
+    }
 
 
 # ══════════════════════════════════════════════════════════════════════
 # Skill Management (permanently persisted, self-optimizing)
 # ══════════════════════════════════════════════════════════════════════
+
 
 @tool(
     name="manage_skill",
@@ -465,11 +510,13 @@ async def manage_skill(
             if m.get("key", "").startswith(skill_prefix):
                 val = m.get("value", {})
                 if isinstance(val, dict):
-                    skill_list.append({
-                        "name": m["key"].removeprefix(skill_prefix),
-                        "description": val.get("description", ""),
-                        "required_tools": val.get("required_tools", []),
-                    })
+                    skill_list.append(
+                        {
+                            "name": m["key"].removeprefix(skill_prefix),
+                            "description": val.get("description", ""),
+                            "required_tools": val.get("required_tools", []),
+                        }
+                    )
         return {"status": "success", "skills": skill_list, "count": len(skill_list)}
 
     if action == "read":
@@ -477,11 +524,16 @@ async def manage_skill(
             return {"status": "error", "message": "Provide 'name' of skill to read."}
         value = await ctx.repository.get_memory(agent_id, skill_prefix + name)
         if value is None:
-            return {"status": "success", "name": name, "content": None,
-                    "message": f"Skill '{name}' does not exist yet."}
+            return {
+                "status": "success",
+                "name": name,
+                "content": None,
+                "message": f"Skill '{name}' does not exist yet.",
+            }
         if isinstance(value, dict):
             return {
-                "status": "success", "name": name,
+                "status": "success",
+                "name": name,
                 "description": value.get("description", ""),
                 "content": value.get("content", ""),
                 "required_tools": value.get("required_tools", []),
@@ -492,35 +544,54 @@ async def manage_skill(
         if not name:
             return {"status": "error", "message": "Provide 'name' for the skill."}
         if not content:
-            return {"status": "error", "message": "Provide 'content' (the procedure) for the skill."}
-        tools_list = [t.strip() for t in required_tools.split(",") if t.strip()] if required_tools else []
+            return {
+                "status": "error",
+                "message": "Provide 'content' (the procedure) for the skill.",
+            }
+        tools_list = (
+            [t.strip() for t in required_tools.split(",") if t.strip()] if required_tools else []
+        )
         skill_data = {
             "description": description or name,
             "content": content,
             "required_tools": tools_list,
         }
         await ctx.repository.set_memory(
-            agent_id, skill_prefix + name, skill_data,
-            memory_type="skill", session_id=ctx.session_id,
+            agent_id,
+            skill_prefix + name,
+            skill_data,
+            memory_type="skill",
+            session_id=ctx.session_id,
         )
-        return {"status": "success", "action": "written", "name": name,
-                "description": description or name}
+        return {
+            "status": "success",
+            "action": "written",
+            "name": name,
+            "description": description or name,
+        }
 
     if action == "delete":
         if not name:
             return {"status": "error", "message": "Provide 'name' of skill to delete."}
         await ctx.repository.set_memory(
-            agent_id, skill_prefix + name, None,
-            memory_type="skill", session_id=ctx.session_id,
+            agent_id,
+            skill_prefix + name,
+            None,
+            memory_type="skill",
+            session_id=ctx.session_id,
         )
         return {"status": "success", "action": "deleted", "name": name}
 
-    return {"status": "error", "message": f"Unknown action '{action}'. Use: read, write, list, delete."}
+    return {
+        "status": "error",
+        "message": f"Unknown action '{action}'. Use: read, write, list, delete.",
+    }
 
 
 # ══════════════════════════════════════════════════════════════════════
 # Context Management
 # ══════════════════════════════════════════════════════════════════════
+
 
 @tool(
     name="manage_context",
@@ -548,6 +619,7 @@ async def manage_context(ctx: ExecutionContext = None) -> dict:
 # ══════════════════════════════════════════════════════════════════════
 # Lifecycle — Session & Task Completion
 # ══════════════════════════════════════════════════════════════════════
+
 
 @tool(
     name="session_complete",

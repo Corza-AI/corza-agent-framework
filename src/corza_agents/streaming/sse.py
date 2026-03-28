@@ -4,6 +4,7 @@ Corza Agent Framework — Production SSE Streaming
 Handles heartbeat, client disconnect detection, and event ID-based reconnection.
 Used by the FastAPI router to stream agent events to the frontend.
 """
+
 import asyncio
 from collections.abc import AsyncIterator
 

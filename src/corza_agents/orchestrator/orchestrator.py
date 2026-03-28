@@ -12,6 +12,7 @@ Usage:
     async for event in orchestrator.run(session_id, "Investigate case X", brain_def):
         handle(event)
 """
+
 import json
 from collections.abc import AsyncIterator
 
@@ -117,12 +118,13 @@ class Orchestrator:
         (depth over breadth, schema first, memory first, record immediately).
         """
         if not agent_def.system_prompt:
-            agent_def = agent_def.model_copy(update={
-                "system_prompt": TASK_AGENT_SYSTEM_PROMPT,
-            })
+            agent_def = agent_def.model_copy(
+                update={
+                    "system_prompt": TASK_AGENT_SYSTEM_PROMPT,
+                }
+            )
         self._sub_agents[name] = agent_def
-        log.info("sub_agent_registered", name=name, model=agent_def.model,
-                 tools=agent_def.tools)
+        log.info("sub_agent_registered", name=name, model=agent_def.model, tools=agent_def.tools)
 
     def register_sub_agents(self, agents: dict[str, AgentDefinition]) -> None:
         for name, agent_def in agents.items():
@@ -171,30 +173,38 @@ class Orchestrator:
         """
         # Add sub-agent definitions to the agent_def for prompt generation
         if self._sub_agents:
-            agent_def = agent_def.model_copy(update={
-                "sub_agents": self._sub_agents,
-            })
+            agent_def = agent_def.model_copy(
+                update={
+                    "sub_agents": self._sub_agents,
+                }
+            )
 
         # If the brain agent has sub-agents but no system prompt, inject the
         # orchestrator prompt so it knows how to plan, delegate, and synthesize.
         if self._sub_agents and not agent_def.system_prompt:
-            agent_def = agent_def.model_copy(update={
-                "system_prompt": ORCHESTRATOR_SYSTEM_PROMPT,
-            })
+            agent_def = agent_def.model_copy(
+                update={
+                    "system_prompt": ORCHESTRATOR_SYSTEM_PROMPT,
+                }
+            )
 
         # Augment system prompt with available sub-agents info
         if self._sub_agents:
             sub_agent_info = self._build_sub_agent_prompt()
             current_prompt = agent_def.system_prompt or ""
-            agent_def = agent_def.model_copy(update={
-                "system_prompt": current_prompt + "\n\n" + sub_agent_info,
-            })
+            agent_def = agent_def.model_copy(
+                update={
+                    "system_prompt": current_prompt + "\n\n" + sub_agent_info,
+                }
+            )
 
         # Ensure manage_agent is in the tool list
         if "manage_agent" not in agent_def.tools and self._sub_agents:
-            agent_def = agent_def.model_copy(update={
-                "tools": agent_def.tools + ["manage_agent"],
-            })
+            agent_def = agent_def.model_copy(
+                update={
+                    "tools": agent_def.tools + ["manage_agent"],
+                }
+            )
 
         # Pass max_parallel_agents into metadata so the handler can enforce it
         run_metadata = dict(metadata or {})
@@ -237,10 +247,12 @@ class Orchestrator:
     async def initialize(self) -> None:
         """Initialize DB tables. Call once on startup."""
         await self._repo.initialize()
-        log.info("orchestrator_initialized",
-                 tools=list(self._tools.tools.keys()),
-                 sub_agents=list(self._sub_agents.keys()),
-                 middleware=[m.name for m in self._middleware])
+        log.info(
+            "orchestrator_initialized",
+            tools=list(self._tools.tools.keys()),
+            sub_agents=list(self._sub_agents.keys()),
+            middleware=[m.name for m in self._middleware],
+        )
 
     async def cancel(self, session_id: str) -> int:
         """
@@ -292,7 +304,8 @@ class Orchestrator:
             # Task agents (sub-agents) can ONLY report back — they cannot
             # spawn, message, or inspect other agents.
             is_sub_agent = bool(
-                ctx and ctx.parent_session_id
+                ctx
+                and ctx.parent_session_id
                 or (ctx and ctx.metadata and ctx.metadata.get("parent_session_id"))
             )
             if is_sub_agent and action != "report":
@@ -337,8 +350,10 @@ class Orchestrator:
                 return {"status": "error", "message": "Provide 'task' for the sub-agent."}
             if agent_name not in sub_agents:
                 available = list(sub_agents.keys())
-                return {"status": "error",
-                        "message": f"Sub-agent '{agent_name}' not found. Available: {available}"}
+                return {
+                    "status": "error",
+                    "message": f"Sub-agent '{agent_name}' not found. Available: {available}",
+                }
 
             agent_def = sub_agents[agent_name]
             context_dict = None
@@ -362,9 +377,11 @@ class Orchestrator:
             if on_spawn:
                 spawn_result = await on_spawn(agent_name, task, parent_sid)
                 if isinstance(spawn_result, dict):
-                    log.info("agent_dispatched_externally",
-                             agent_name=agent_name,
-                             task_id=spawn_result.get("task_id", "?"))
+                    log.info(
+                        "agent_dispatched_externally",
+                        agent_name=agent_name,
+                        task_id=spawn_result.get("task_id", "?"),
+                    )
                     return {
                         "status": "dispatched",
                         "message": (
@@ -387,6 +404,7 @@ class Orchestrator:
             event_callback = None
             if on_event and child_session_id:
                 cid = child_session_id
+
                 async def event_callback(event):
                     await on_event(cid, event)
 
@@ -397,8 +415,11 @@ class Orchestrator:
                         child_metadata[key] = ctx.metadata[key]
 
             result: SubAgentResult = await runner.run(
-                task=task, agent_def=agent_def, parent_session_id=parent_sid,
-                context_data=context_dict, metadata=child_metadata,
+                task=task,
+                agent_def=agent_def,
+                parent_session_id=parent_sid,
+                context_data=context_dict,
+                metadata=child_metadata,
                 on_event=event_callback,
             )
 
@@ -406,9 +427,13 @@ class Orchestrator:
             if on_complete and child_session_id:
                 await on_complete(child_session_id, result.status.value, result.output)
 
-            log.info("agent_spawned", agent_name=agent_name,
-                     child_session_id=result.child_session_id,
-                     status=result.status.value, turns=result.turns_used)
+            log.info(
+                "agent_spawned",
+                agent_name=agent_name,
+                child_session_id=result.child_session_id,
+                status=result.status.value,
+                turns=result.turns_used,
+            )
 
             return {
                 "status": result.status.value,
@@ -423,15 +448,21 @@ class Orchestrator:
         async def _spawn_parallel(tasks_json, ctx):
             """Spawn multiple sub-agents concurrently and return all results."""
             if not tasks_json:
-                return {"status": "error", "message": (
-                    "Provide 'tasks' as a JSON array of objects: "
-                    '[{"agent_name": "researcher", "task": "Investigate X"}, ...]'
-                )}
+                return {
+                    "status": "error",
+                    "message": (
+                        "Provide 'tasks' as a JSON array of objects: "
+                        '[{"agent_name": "researcher", "task": "Investigate X"}, ...]'
+                    ),
+                }
 
             try:
                 task_list = json.loads(tasks_json) if isinstance(tasks_json, str) else tasks_json
             except (json.JSONDecodeError, TypeError):
-                return {"status": "error", "message": "Invalid 'tasks' JSON. Expected array of {agent_name, task} objects."}
+                return {
+                    "status": "error",
+                    "message": "Invalid 'tasks' JSON. Expected array of {agent_name, task} objects.",
+                }
 
             if not isinstance(task_list, list) or not task_list:
                 return {"status": "error", "message": "Provide a non-empty array of task objects."}
@@ -441,10 +472,13 @@ class Orchestrator:
             if ctx and ctx.metadata:
                 max_parallel = ctx.metadata.get("max_parallel_agents", max_parallel)
             if len(task_list) > max_parallel:
-                return {"status": "error", "message": (
-                    f"Too many parallel tasks ({len(task_list)}). "
-                    f"Maximum is {max_parallel}. Split into batches."
-                )}
+                return {
+                    "status": "error",
+                    "message": (
+                        f"Too many parallel tasks ({len(task_list)}). "
+                        f"Maximum is {max_parallel}. Split into batches."
+                    ),
+                }
 
             # Validate all tasks before spawning any
             for i, t in enumerate(task_list):
@@ -456,17 +490,22 @@ class Orchestrator:
                     return {"status": "error", "message": f"Task {i} missing 'task'."}
                 if t["agent_name"] not in sub_agents:
                     available = list(sub_agents.keys())
-                    return {"status": "error", "message": (
-                        f"Task {i}: agent '{t['agent_name']}' not found. Available: {available}"
-                    )}
+                    return {
+                        "status": "error",
+                        "message": (
+                            f"Task {i}: agent '{t['agent_name']}' not found. Available: {available}"
+                        ),
+                    }
 
             # Spawn all concurrently
             import asyncio as _asyncio
 
             async def _run_one(t):
                 return await _spawn(
-                    t["agent_name"], t["task"],
-                    t.get("context_data", ""), ctx,
+                    t["agent_name"],
+                    t["task"],
+                    t.get("context_data", ""),
+                    ctx,
                 )
 
             results = await _asyncio.gather(
@@ -478,20 +517,27 @@ class Orchestrator:
             formatted = []
             for i, (t, r) in enumerate(zip(task_list, results)):
                 if isinstance(r, Exception):
-                    formatted.append({
-                        "agent_name": t["agent_name"],
-                        "task": t["task"][:200],
-                        "status": "error",
-                        "error": str(r)[:500],
-                    })
+                    formatted.append(
+                        {
+                            "agent_name": t["agent_name"],
+                            "task": t["task"][:200],
+                            "status": "error",
+                            "error": str(r)[:500],
+                        }
+                    )
                 else:
                     r["task"] = t["task"][:200]
                     formatted.append(r)
 
-            succeeded = sum(1 for r in formatted if isinstance(r, dict) and r.get("status") == "success")
-            log.info("parallel_spawn_complete",
-                     total=len(task_list), succeeded=succeeded,
-                     failed=len(task_list) - succeeded)
+            succeeded = sum(
+                1 for r in formatted if isinstance(r, dict) and r.get("status") == "success"
+            )
+            log.info(
+                "parallel_spawn_complete",
+                total=len(task_list),
+                succeeded=succeeded,
+                failed=len(task_list) - succeeded,
+            )
 
             return {
                 "status": "success",
@@ -510,8 +556,10 @@ class Orchestrator:
             # Look up the child session to find its agent definition
             child_session = await repo.get_session(child_session_id)
             if not child_session:
-                return {"status": "error",
-                        "message": f"Sub-agent session '{child_session_id}' not found."}
+                return {
+                    "status": "error",
+                    "message": f"Sub-agent session '{child_session_id}' not found.",
+                }
 
             # Find the matching agent definition
             agent_def = None
@@ -531,6 +579,7 @@ class Orchestrator:
             event_callback = None
             if on_event:
                 cid = child_session_id
+
                 async def event_callback(event):
                     await on_event(cid, event)
 
@@ -541,8 +590,12 @@ class Orchestrator:
                 on_event=event_callback,
             )
 
-            log.info("agent_messaged", session_id=child_session_id,
-                     status=result.status.value, turns=result.turns_used)
+            log.info(
+                "agent_messaged",
+                session_id=child_session_id,
+                status=result.status.value,
+                turns=result.turns_used,
+            )
 
             return {
                 "status": result.status.value,
@@ -569,11 +622,15 @@ class Orchestrator:
                         category="report",
                         evidence={"full_content": content},
                     )
-                return {"status": "success", "stored": "local",
-                        "message": "Report stored in local working memory (no parent session)."}
+                return {
+                    "status": "success",
+                    "stored": "local",
+                    "message": "Report stored in local working memory (no parent session).",
+                }
 
             # Store the report as a message in the PARENT session
             from corza_agents.core.types import AgentMessage, MessageRole
+
             report_msg = AgentMessage(
                 session_id=parent_sid,
                 role=MessageRole.USER,
@@ -587,15 +644,20 @@ class Orchestrator:
             # Also persist as a document for cross-session access
             report_key = f"doc:report-{ctx.agent_name}-{ctx.session_id[:8]}"
             await repo.set_memory(
-                ctx.agent_id, report_key, content,
-                memory_type="document", session_id=ctx.session_id,
+                ctx.agent_id,
+                report_key,
+                content,
+                memory_type="document",
+                session_id=ctx.session_id,
             )
 
-            log.info("agent_report",
-                     child_session_id=ctx.session_id,
-                     parent_session_id=parent_sid,
-                     agent_name=ctx.agent_name,
-                     report_length=len(content))
+            log.info(
+                "agent_report",
+                child_session_id=ctx.session_id,
+                parent_session_id=parent_sid,
+                agent_name=ctx.agent_name,
+                report_length=len(content),
+            )
 
             return {
                 "status": "success",
@@ -624,8 +686,10 @@ class Orchestrator:
 
     def _build_sub_agent_prompt(self) -> str:
         """Build system prompt section describing available sub-agents."""
-        lines = ["## Available Sub-Agents\n",
-                 "Use the `manage_agent` tool to delegate tasks to these specialized agents:\n"]
+        lines = [
+            "## Available Sub-Agents\n",
+            "Use the `manage_agent` tool to delegate tasks to these specialized agents:\n",
+        ]
         for name, agent_def in self._sub_agents.items():
             lines.append(f"### {name}")
             lines.append(f"- **Description**: {agent_def.description}")

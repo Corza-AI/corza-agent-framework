@@ -6,6 +6,7 @@ Requires: pip install "corza-agents[sqlite]"
 
 Data persists to a local .db file. No server needed.
 """
+
 import json
 import uuid
 from datetime import UTC, datetime
@@ -175,12 +176,20 @@ class SQLiteRepository(BaseRepository):
                 total_cost_usd, turn_count)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
-                session.id, session.agent_id, session.user_id, session.tenant_id,
+                session.id,
+                session.agent_id,
+                session.user_id,
+                session.tenant_id,
                 session.parent_session_id,
-                session.status.value, _json_dumps(session.config),
-                _json_dumps(session.metadata), session.created_at.isoformat(),
-                session.updated_at.isoformat(), session.total_input_tokens,
-                session.total_output_tokens, session.total_cost_usd, session.turn_count,
+                session.status.value,
+                _json_dumps(session.config),
+                _json_dumps(session.metadata),
+                session.created_at.isoformat(),
+                session.updated_at.isoformat(),
+                session.total_input_tokens,
+                session.total_output_tokens,
+                session.total_cost_usd,
+                session.turn_count,
             ),
         )
         await db.commit()
@@ -188,9 +197,7 @@ class SQLiteRepository(BaseRepository):
 
     async def get_session(self, session_id: str) -> AgentSession | None:
         db = self._ensure_db()
-        cursor = await db.execute(
-            "SELECT * FROM af_sessions WHERE id = ?", (session_id,)
-        )
+        cursor = await db.execute("SELECT * FROM af_sessions WHERE id = ?", (session_id,))
         row = await cursor.fetchone()
         if not row:
             return None
@@ -212,14 +219,15 @@ class SQLiteRepository(BaseRepository):
             return
         set_clause = ", ".join(f"{k} = ?" for k in updates)
         values = list(updates.values()) + [session_id]
-        await db.execute(
-            f"UPDATE af_sessions SET {set_clause} WHERE id = ?", values
-        )
+        await db.execute(f"UPDATE af_sessions SET {set_clause} WHERE id = ?", values)
         await db.commit()
 
     async def get_sessions_for_user(
-        self, user_id: str, tenant_id: str = "",
-        status: str | None = None, limit: int = 50,
+        self,
+        user_id: str,
+        tenant_id: str = "",
+        status: str | None = None,
+        limit: int = 50,
     ) -> list:
         db = self._ensure_db()
         query = "SELECT * FROM af_sessions WHERE user_id = ?"
@@ -259,17 +267,26 @@ class SQLiteRepository(BaseRepository):
                 tool_name, token_count, model, created_at, is_summarized)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
-                message.id, message.session_id, message.role.value,
-                content, tool_calls_data, message.tool_call_id,
-                message.tool_name, message.token_count, message.model,
-                message.created_at.isoformat(), int(message.is_summarized),
+                message.id,
+                message.session_id,
+                message.role.value,
+                content,
+                tool_calls_data,
+                message.tool_call_id,
+                message.tool_name,
+                message.token_count,
+                message.model,
+                message.created_at.isoformat(),
+                int(message.is_summarized),
             ),
         )
         await db.commit()
         return message
 
     async def get_messages(
-        self, session_id: str, include_summarized: bool = False,
+        self,
+        session_id: str,
+        include_summarized: bool = False,
     ) -> list[AgentMessage]:
         db = self._ensure_db()
         if include_summarized:
@@ -286,7 +303,9 @@ class SQLiteRepository(BaseRepository):
         return [self._message_from_row(r) for r in rows]
 
     async def mark_messages_summarized(
-        self, session_id: str, message_ids: list[str],
+        self,
+        session_id: str,
+        message_ids: list[str],
     ) -> None:
         if not message_ids:
             return
@@ -324,9 +343,17 @@ class SQLiteRepository(BaseRepository):
                 input, output, status, duration_ms, error, created_at)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
-                _uuid(), session_id, message_id, tool_call_id, tool_name,
-                _json_dumps(input_data), output_json, status,
-                duration_ms, error, _now_iso(),
+                _uuid(),
+                session_id,
+                message_id,
+                tool_call_id,
+                tool_name,
+                _json_dumps(input_data),
+                output_json,
+                status,
+                duration_ms,
+                error,
+                _now_iso(),
             ),
         )
         await db.commit()
@@ -349,16 +376,23 @@ class SQLiteRepository(BaseRepository):
                (id, session_id, artifact_type, name, content, content_json, metadata, created_at)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
             (
-                artifact_id, session_id, artifact_type, name, content,
+                artifact_id,
+                session_id,
+                artifact_type,
+                name,
+                content,
                 _json_dumps(content_json) if content_json else None,
-                _json_dumps(metadata or {}), _now_iso(),
+                _json_dumps(metadata or {}),
+                _now_iso(),
             ),
         )
         await db.commit()
         return artifact_id
 
     async def get_artifacts(
-        self, session_id: str, artifact_type: str | None = None,
+        self,
+        session_id: str,
+        artifact_type: str | None = None,
     ) -> list[dict]:
         db = self._ensure_db()
         if artifact_type:
@@ -406,10 +440,17 @@ class SQLiteRepository(BaseRepository):
                 llm_model, llm_input_tokens, llm_output_tokens, llm_latency_ms, timestamp)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
-                _uuid(), session_id, event_type, actor, action,
+                _uuid(),
+                session_id,
+                event_type,
+                actor,
+                action,
                 _json_dumps(detail) if detail else None,
-                llm_model, llm_input_tokens, llm_output_tokens,
-                llm_latency_ms, _now_iso(),
+                llm_model,
+                llm_input_tokens,
+                llm_output_tokens,
+                llm_latency_ms,
+                _now_iso(),
             ),
         )
         await db.commit()
@@ -482,7 +523,9 @@ class SQLiteRepository(BaseRepository):
         await db.commit()
 
     async def list_memories(
-        self, agent_id: str, memory_type: str | None = None,
+        self,
+        agent_id: str,
+        memory_type: str | None = None,
     ) -> list[dict]:
         db = self._ensure_db()
         if memory_type:
@@ -521,7 +564,9 @@ class SQLiteRepository(BaseRepository):
             metadata=json.loads(row["metadata"]) if row["metadata"] else {},
             created_at=datetime.fromisoformat(row["created_at"]),
             updated_at=datetime.fromisoformat(row["updated_at"]),
-            completed_at=datetime.fromisoformat(row["completed_at"]) if row["completed_at"] else None,
+            completed_at=datetime.fromisoformat(row["completed_at"])
+            if row["completed_at"]
+            else None,
             total_input_tokens=row["total_input_tokens"],
             total_output_tokens=row["total_output_tokens"],
             total_cost_usd=row["total_cost_usd"],

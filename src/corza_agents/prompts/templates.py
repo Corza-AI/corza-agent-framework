@@ -12,6 +12,7 @@ Keep system prompts short, principled, and domain-agnostic.
 Put project context, schemas, and reference material into knowledge files.
 Put step-by-step procedures, checklists, and domain logic into Skills.
 """
+
 from pathlib import Path
 from typing import Any
 
@@ -21,6 +22,7 @@ from corza_agents.core.types import AgentDefinition, Skill
 
 try:
     from jinja2 import Template as Jinja2Template
+
     HAS_JINJA2 = True
 except ImportError:
     HAS_JINJA2 = False
@@ -228,7 +230,10 @@ def build_system_prompt(
     obj_text = objective or agent_def.objective
     if obj_text:
         if len(obj_text) > _OBJECTIVE_MAX_CHARS:
-            obj_text = obj_text[:_OBJECTIVE_MAX_CHARS] + "\n\n*(truncated — load full objective via `manage_objective(action='read')`)*"
+            obj_text = (
+                obj_text[:_OBJECTIVE_MAX_CHARS]
+                + "\n\n*(truncated — load full objective via `manage_objective(action='read')`)*"
+            )
         parts.append(f"## Objective\n\n{obj_text}")
 
     # 4. Skills — reusable procedures (name + description index)

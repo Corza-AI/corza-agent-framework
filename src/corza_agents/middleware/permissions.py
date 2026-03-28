@@ -11,6 +11,7 @@ Permission levels:
   - deny: Tool is blocked entirely
   - conditional: Runs a permission function to decide
 """
+
 from collections.abc import Callable
 
 import structlog
@@ -124,29 +125,24 @@ class PermissionMiddleware(BaseMiddleware):
             return tool_call
 
         elif rule.level == "deny":
-            log.info("tool_denied_by_rule",
-                     tool=tool_call.tool_name,
-                     reason=rule.reason)
+            log.info("tool_denied_by_rule", tool=tool_call.tool_name, reason=rule.reason)
             return None
 
         elif rule.level == "conditional" and rule.condition:
             try:
                 allowed = await rule.condition(tool_call, context)
                 if not allowed:
-                    log.info("tool_denied_conditional",
-                             tool=tool_call.tool_name,
-                             reason=rule.reason)
+                    log.info(
+                        "tool_denied_conditional", tool=tool_call.tool_name, reason=rule.reason
+                    )
                     return None
                 return tool_call
             except Exception as e:
-                log.error("permission_condition_error",
-                          tool=tool_call.tool_name, error=str(e))
+                log.error("permission_condition_error", tool=tool_call.tool_name, error=str(e))
                 return None
 
         elif rule.level == "ask":
-            log.info("tool_needs_approval",
-                     tool=tool_call.tool_name,
-                     reason=rule.reason)
+            log.info("tool_needs_approval", tool=tool_call.tool_name, reason=rule.reason)
             # In a full implementation, this would pause and wait for human approval
             # For now, auto-approve (can be wired to a WebSocket approval flow)
             return tool_call

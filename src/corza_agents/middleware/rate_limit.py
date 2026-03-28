@@ -14,6 +14,7 @@ Usage:
     mw = RateLimitMiddleware(max_calls=30, window_seconds=60, scope="user")
     orchestrator = Orchestrator(llm, tools, repo, middleware=[mw])
 """
+
 import time
 from collections import defaultdict
 from dataclasses import dataclass, field
@@ -35,6 +36,7 @@ log = structlog.get_logger("corza_agents.rate_limit")
 @dataclass
 class _Bucket:
     """Token bucket for a single scope key."""
+
     timestamps: list[float] = field(default_factory=list)
 
 

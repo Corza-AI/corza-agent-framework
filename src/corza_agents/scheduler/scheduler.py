@@ -30,6 +30,7 @@ Usage:
     # Start the scheduler loop
     await scheduler.start()
 """
+
 import asyncio
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -48,6 +49,7 @@ log = structlog.get_logger("corza_agents.scheduler")
 
 class ScheduleEntry(BaseModel):
     """Schedule definition."""
+
     id: str = Field(default_factory=_uuid)
     name: str
     agent_id: str
@@ -202,9 +204,13 @@ class AgentScheduler:
             result = await db.execute(query.order_by(AgentScheduleModel.created_at))
             return [
                 {
-                    "id": s.id, "name": s.name, "agent_id": s.agent_id,
-                    "type": s.schedule_type, "cron": s.cron_expression,
-                    "event_type": s.event_type, "enabled": s.enabled,
+                    "id": s.id,
+                    "name": s.name,
+                    "agent_id": s.agent_id,
+                    "type": s.schedule_type,
+                    "cron": s.cron_expression,
+                    "event_type": s.event_type,
+                    "enabled": s.enabled,
                     "next_run_at": s.next_run_at.isoformat() if s.next_run_at else None,
                     "last_run_at": s.last_run_at.isoformat() if s.last_run_at else None,
                     "last_run_status": s.last_run_status,
@@ -261,7 +267,9 @@ class AgentScheduler:
             due_schedules = result.scalars().all()
 
         for schedule in due_schedules:
-            log.info("schedule_due", id=schedule.id, name=schedule.name, type=schedule.schedule_type)
+            log.info(
+                "schedule_due", id=schedule.id, name=schedule.name, type=schedule.schedule_type
+            )
             asyncio.create_task(self._execute_and_update(schedule))
 
     async def _execute_and_update(self, schedule: AgentScheduleModel) -> None:
@@ -301,7 +309,9 @@ class AgentScheduler:
         """Execute a scheduled agent run."""
         agent_def = self._agents.get(schedule.agent_id)
         if not agent_def:
-            log.error("schedule_agent_not_found", agent_id=schedule.agent_id, schedule_id=schedule.id)
+            log.error(
+                "schedule_agent_not_found", agent_id=schedule.agent_id, schedule_id=schedule.id
+            )
             return None
 
         variables = dict(schedule.variables or {})
@@ -313,10 +323,13 @@ class AgentScheduler:
 
         # Render prompt template
         from corza_agents.prompts.templates import render_template
+
         prompt = render_template(schedule.prompt_template, variables)
 
         session_id = _uuid()
-        metadata = dict(schedule.metadata_ if hasattr(schedule, "metadata_") else (schedule.metadata or {}))
+        metadata = dict(
+            schedule.metadata_ if hasattr(schedule, "metadata_") else (schedule.metadata or {})
+        )
         metadata["scheduled"] = True
         metadata["schedule_id"] = schedule.id
 
@@ -329,20 +342,18 @@ class AgentScheduler:
                 variables=variables,
             ):
                 if event.type.value == "error":
-                    log.warning("scheduled_run_error",
-                               schedule_id=schedule.id,
-                               session_id=session_id,
-                               error=event.data.get("message"))
+                    log.warning(
+                        "scheduled_run_error",
+                        schedule_id=schedule.id,
+                        session_id=session_id,
+                        error=event.data.get("message"),
+                    )
 
-            log.info("scheduled_run_completed",
-                     schedule_id=schedule.id,
-                     session_id=session_id)
+            log.info("scheduled_run_completed", schedule_id=schedule.id, session_id=session_id)
             return session_id
 
         except Exception as e:
-            log.error("scheduled_run_failed",
-                      schedule_id=schedule.id,
-                      error=str(e)[:500])
+            log.error("scheduled_run_failed", schedule_id=schedule.id, error=str(e)[:500])
             return None
 
     # ══════════════════════════════════════════════════════════════════
@@ -371,10 +382,13 @@ class AgentScheduler:
             db.add(model)
             await db.commit()
 
-        log.info("schedule_created",
-                 id=entry.id, name=entry.name,
-                 type=entry.schedule_type,
-                 next_run=next_run_at.isoformat() if next_run_at else None)
+        log.info(
+            "schedule_created",
+            id=entry.id,
+            name=entry.name,
+            type=entry.schedule_type,
+            next_run=next_run_at.isoformat() if next_run_at else None,
+        )
         return entry.id
 
     @staticmethod
@@ -385,6 +399,7 @@ class AgentScheduler:
         """
         try:
             from croniter import croniter
+
             cron = croniter(cron_expression, datetime.now(UTC))
             return cron.get_next(datetime).replace(tzinfo=UTC)
         except ImportError:

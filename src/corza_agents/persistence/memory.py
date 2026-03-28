@@ -5,6 +5,7 @@ Zero-dependency persistence backend using plain Python dicts.
 Perfect for testing, prototyping, and single-run scripts.
 Data is lost when the process exits.
 """
+
 import copy
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -63,11 +64,15 @@ class InMemoryRepository(BaseRepository):
         self._sessions[session_id] = session.model_copy(update=updates)
 
     async def get_sessions_for_user(
-        self, user_id: str, tenant_id: str = "",
-        status: str | None = None, limit: int = 50,
+        self,
+        user_id: str,
+        tenant_id: str = "",
+        status: str | None = None,
+        limit: int = 50,
     ) -> list:
         sessions = [
-            s for s in self._sessions.values()
+            s
+            for s in self._sessions.values()
             if s.user_id == user_id and (not tenant_id or s.tenant_id == tenant_id)
         ]
         if status:
@@ -77,7 +82,8 @@ class InMemoryRepository(BaseRepository):
 
     async def get_child_sessions(self, parent_session_id: str) -> list:
         return [
-            s.model_copy() for s in self._sessions.values()
+            s.model_copy()
+            for s in self._sessions.values()
             if s.parent_session_id == parent_session_id
         ]
 
@@ -88,12 +94,12 @@ class InMemoryRepository(BaseRepository):
         self._tool_executions[:] = [
             t for t in self._tool_executions if t.get("session_id") != session_id
         ]
-        self._audit_log[:] = [
-            a for a in self._audit_log if a.get("session_id") != session_id
-        ]
+        self._audit_log[:] = [a for a in self._audit_log if a.get("session_id") != session_id]
 
     async def purge_old_sessions(
-        self, max_age_hours: int = 168, statuses: list[str] | None = None,
+        self,
+        max_age_hours: int = 168,
+        statuses: list[str] | None = None,
     ) -> int:
         cutoff = datetime.now(UTC) - timedelta(hours=max_age_hours)
         to_delete = []
@@ -112,7 +118,9 @@ class InMemoryRepository(BaseRepository):
         return message
 
     async def get_messages(
-        self, session_id: str, include_summarized: bool = False,
+        self,
+        session_id: str,
+        include_summarized: bool = False,
     ) -> list[AgentMessage]:
         msgs = self._messages.get(session_id, [])
         if not include_summarized:
@@ -120,7 +128,9 @@ class InMemoryRepository(BaseRepository):
         return [m.model_copy() for m in msgs]
 
     async def mark_messages_summarized(
-        self, session_id: str, message_ids: list[str],
+        self,
+        session_id: str,
+        message_ids: list[str],
     ) -> None:
         ids_set = set(message_ids)
         msgs = self._messages.get(session_id, [])
@@ -142,19 +152,21 @@ class InMemoryRepository(BaseRepository):
         duration_ms: float,
         error: str | None = None,
     ) -> None:
-        self._tool_executions.append({
-            "id": str(uuid.uuid4()),
-            "session_id": session_id,
-            "message_id": message_id,
-            "tool_call_id": tool_call_id,
-            "tool_name": tool_name,
-            "input": input_data,
-            "output": output_data,
-            "status": status,
-            "duration_ms": duration_ms,
-            "error": error,
-            "created_at": datetime.now(UTC).isoformat(),
-        })
+        self._tool_executions.append(
+            {
+                "id": str(uuid.uuid4()),
+                "session_id": session_id,
+                "message_id": message_id,
+                "tool_call_id": tool_call_id,
+                "tool_name": tool_name,
+                "input": input_data,
+                "output": output_data,
+                "status": status,
+                "duration_ms": duration_ms,
+                "error": error,
+                "created_at": datetime.now(UTC).isoformat(),
+            }
+        )
 
     # ── Artifacts ─────────────────────────────────────────────────
 
@@ -168,20 +180,24 @@ class InMemoryRepository(BaseRepository):
         metadata: dict | None = None,
     ) -> str:
         artifact_id = str(uuid.uuid4())
-        self._artifacts.setdefault(session_id, []).append({
-            "id": artifact_id,
-            "session_id": session_id,
-            "type": artifact_type,
-            "name": name,
-            "content": content,
-            "content_json": content_json,
-            "metadata": metadata or {},
-            "created_at": datetime.now(UTC).isoformat(),
-        })
+        self._artifacts.setdefault(session_id, []).append(
+            {
+                "id": artifact_id,
+                "session_id": session_id,
+                "type": artifact_type,
+                "name": name,
+                "content": content,
+                "content_json": content_json,
+                "metadata": metadata or {},
+                "created_at": datetime.now(UTC).isoformat(),
+            }
+        )
         return artifact_id
 
     async def get_artifacts(
-        self, session_id: str, artifact_type: str | None = None,
+        self,
+        session_id: str,
+        artifact_type: str | None = None,
     ) -> list[dict]:
         artifacts = self._artifacts.get(session_id, [])
         if artifact_type:
@@ -202,24 +218,24 @@ class InMemoryRepository(BaseRepository):
         llm_output_tokens: int | None = None,
         llm_latency_ms: float | None = None,
     ) -> None:
-        self._audit_log.append({
-            "id": str(uuid.uuid4()),
-            "session_id": session_id,
-            "event_type": event_type,
-            "actor": actor,
-            "action": action,
-            "detail": detail,
-            "llm_model": llm_model,
-            "llm_input_tokens": llm_input_tokens,
-            "llm_output_tokens": llm_output_tokens,
-            "llm_latency_ms": llm_latency_ms,
-            "timestamp": datetime.now(UTC).isoformat(),
-        })
+        self._audit_log.append(
+            {
+                "id": str(uuid.uuid4()),
+                "session_id": session_id,
+                "event_type": event_type,
+                "actor": actor,
+                "action": action,
+                "detail": detail,
+                "llm_model": llm_model,
+                "llm_input_tokens": llm_input_tokens,
+                "llm_output_tokens": llm_output_tokens,
+                "llm_latency_ms": llm_latency_ms,
+                "timestamp": datetime.now(UTC).isoformat(),
+            }
+        )
 
     async def get_audit_log(self, session_id: str) -> list[dict]:
-        return [
-            e for e in self._audit_log if e["session_id"] == session_id
-        ]
+        return [e for e in self._audit_log if e["session_id"] == session_id]
 
     # ── Memory Store ──────────────────────────────────────────────
 
@@ -255,17 +271,21 @@ class InMemoryRepository(BaseRepository):
             }
 
     async def list_memories(
-        self, agent_id: str, memory_type: str | None = None,
+        self,
+        agent_id: str,
+        memory_type: str | None = None,
     ) -> list[dict]:
         agent_mem = self._memory.get(agent_id, {})
         result = []
         for key, entry in agent_mem.items():
             if memory_type and entry.get("type") != memory_type:
                 continue
-            result.append({
-                "key": key,
-                "value": entry["value"],
-                "type": entry.get("type", "long_term"),
-                "updated_at": entry.get("updated_at"),
-            })
+            result.append(
+                {
+                    "key": key,
+                    "value": entry["value"],
+                    "type": entry.get("type", "long_term"),
+                    "updated_at": entry.get("updated_at"),
+                }
+            )
         return sorted(result, key=lambda x: x.get("updated_at", ""), reverse=True)

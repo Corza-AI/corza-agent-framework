@@ -3,6 +3,7 @@ Corza Agent Framework — API Schemas
 
 Pydantic models for API request/response payloads.
 """
+
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -11,9 +12,12 @@ from pydantic import BaseModel, Field
 # Session Endpoints
 # ══════════════════════════════════════════════════════════════════════
 
+
 class CreateSessionRequest(BaseModel):
     agent_id: str = Field(..., description="Agent definition ID or name")
-    metadata: dict[str, Any] = Field(default_factory=dict, description="Arbitrary metadata (tenant_id, case_id, etc.)")
+    metadata: dict[str, Any] = Field(
+        default_factory=dict, description="Arbitrary metadata (tenant_id, case_id, etc.)"
+    )
 
 
 class CreateSessionResponse(BaseModel):
@@ -43,9 +47,12 @@ class SessionResponse(BaseModel):
 # Message Endpoints
 # ══════════════════════════════════════════════════════════════════════
 
+
 class SendMessageRequest(BaseModel):
     content: str = Field(..., description="User message content")
-    variables: dict[str, Any] = Field(default_factory=dict, description="Template variables for prompt rendering")
+    variables: dict[str, Any] = Field(
+        default_factory=dict, description="Template variables for prompt rendering"
+    )
     metadata: dict[str, Any] = Field(default_factory=dict, description="Additional metadata")
     stream: bool = Field(default=True, description="Whether to stream the response via SSE")
 
@@ -73,6 +80,7 @@ class MessageResponse(BaseModel):
 # Tool Endpoints
 # ══════════════════════════════════════════════════════════════════════
 
+
 class ToolResponse(BaseModel):
     name: str
     description: str
@@ -96,6 +104,7 @@ class RegisterToolRequest(BaseModel):
 # ══════════════════════════════════════════════════════════════════════
 # Agent Definition Endpoints
 # ══════════════════════════════════════════════════════════════════════
+
 
 class AgentDefinitionResponse(BaseModel):
     id: str
@@ -125,6 +134,7 @@ class RegisterAgentRequest(BaseModel):
 # Artifacts
 # ══════════════════════════════════════════════════════════════════════
 
+
 class ArtifactResponse(BaseModel):
     id: str
     artifact_type: str
@@ -139,6 +149,7 @@ class ArtifactResponse(BaseModel):
 # Audit
 # ══════════════════════════════════════════════════════════════════════
 
+
 class AuditLogResponse(BaseModel):
     entries: list[dict[str, Any]]
     count: int
@@ -147,6 +158,7 @@ class AuditLogResponse(BaseModel):
 # ══════════════════════════════════════════════════════════════════════
 # Health
 # ══════════════════════════════════════════════════════════════════════
+
 
 class HealthResponse(BaseModel):
     status: str = "ok"
@@ -158,6 +170,7 @@ class HealthResponse(BaseModel):
 
 class ErrorResponse(BaseModel):
     """Structured error response with correlation ID for log tracing."""
+
     error_id: str = Field(description="Unique error ID — include in bug reports")
     error: str = Field(description="Human-readable error message")
     error_type: str = Field(default="server_error", description="Error category")

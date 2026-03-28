@@ -4,6 +4,7 @@ Corza Agent Framework — Streaming Events
 Real-time events emitted during agent execution.
 Consumed by SSE/WebSocket API endpoints to stream progress to clients.
 """
+
 import json
 import uuid
 from datetime import UTC, datetime
@@ -28,6 +29,7 @@ class StreamEvent(BaseModel):
 
     Events flow: Engine → AsyncIterator → SSE endpoint → Frontend
     """
+
     id: str = Field(default_factory=_event_id)
     type: EventType
     session_id: str
@@ -47,6 +49,7 @@ class StreamEvent(BaseModel):
 # ══════════════════════════════════════════════════════════════════════
 # Event Constructors — convenience functions for common events
 # ══════════════════════════════════════════════════════════════════════
+
 
 def session_started(session_id: str, agent_id: str, agent_name: str) -> StreamEvent:
     return StreamEvent(
@@ -83,8 +86,9 @@ def thinking_delta(session_id: str, text: str, turn: int = 0) -> StreamEvent:
     )
 
 
-def tool_call_event(session_id: str, tool_name: str, tool_call_id: str,
-                    arguments: dict, turn: int = 0) -> StreamEvent:
+def tool_call_event(
+    session_id: str, tool_name: str, tool_call_id: str, arguments: dict, turn: int = 0
+) -> StreamEvent:
     return StreamEvent(
         type=EventType.LLM_TOOL_CALL,
         session_id=session_id,
@@ -97,8 +101,9 @@ def tool_call_event(session_id: str, tool_name: str, tool_call_id: str,
     )
 
 
-def tool_executing(session_id: str, tool_name: str, tool_call_id: str,
-                   turn: int = 0) -> StreamEvent:
+def tool_executing(
+    session_id: str, tool_name: str, tool_call_id: str, turn: int = 0
+) -> StreamEvent:
     return StreamEvent(
         type=EventType.TOOL_EXECUTING,
         session_id=session_id,
@@ -107,10 +112,16 @@ def tool_executing(session_id: str, tool_name: str, tool_call_id: str,
     )
 
 
-def tool_result_event(session_id: str, tool_name: str, tool_call_id: str,
-                      status: str, duration_ms: float, output_preview: str = "",
-                      turn: int = 0,
-                      card_data: dict | None = None) -> StreamEvent:
+def tool_result_event(
+    session_id: str,
+    tool_name: str,
+    tool_call_id: str,
+    status: str,
+    duration_ms: float,
+    output_preview: str = "",
+    turn: int = 0,
+    card_data: dict | None = None,
+) -> StreamEvent:
     data = {
         "tool_name": tool_name,
         "tool_call_id": tool_call_id,
@@ -128,8 +139,9 @@ def tool_result_event(session_id: str, tool_name: str, tool_call_id: str,
     )
 
 
-def subagent_started(session_id: str, child_session_id: str,
-                     agent_name: str, task: str) -> StreamEvent:
+def subagent_started(
+    session_id: str, child_session_id: str, agent_name: str, task: str
+) -> StreamEvent:
     return StreamEvent(
         type=EventType.SUBAGENT_STARTED,
         session_id=session_id,
@@ -141,8 +153,9 @@ def subagent_started(session_id: str, child_session_id: str,
     )
 
 
-def subagent_completed(session_id: str, child_session_id: str,
-                       agent_name: str, status: str) -> StreamEvent:
+def subagent_completed(
+    session_id: str, child_session_id: str, agent_name: str, status: str
+) -> StreamEvent:
     return StreamEvent(
         type=EventType.SUBAGENT_COMPLETED,
         session_id=session_id,
@@ -154,8 +167,7 @@ def subagent_completed(session_id: str, child_session_id: str,
     )
 
 
-def context_compacting(session_id: str, messages_before: int,
-                       messages_after: int) -> StreamEvent:
+def context_compacting(session_id: str, messages_before: int, messages_after: int) -> StreamEvent:
     return StreamEvent(
         type=EventType.CONTEXT_COMPACTING,
         session_id=session_id,
@@ -175,9 +187,9 @@ def turn_completed(session_id: str, turn: int, stop_reason: str) -> StreamEvent:
     )
 
 
-def session_completed(session_id: str, total_turns: int,
-                      input_tokens: int, output_tokens: int,
-                      final_output: str = "") -> StreamEvent:
+def session_completed(
+    session_id: str, total_turns: int, input_tokens: int, output_tokens: int, final_output: str = ""
+) -> StreamEvent:
     return StreamEvent(
         type=EventType.SESSION_COMPLETED,
         session_id=session_id,
@@ -190,8 +202,9 @@ def session_completed(session_id: str, total_turns: int,
     )
 
 
-def error_event(session_id: str, error_type: str, message: str,
-                turn: int = 0, recoverable: bool = False) -> StreamEvent:
+def error_event(
+    session_id: str, error_type: str, message: str, turn: int = 0, recoverable: bool = False
+) -> StreamEvent:
     return StreamEvent(
         type=EventType.ERROR,
         session_id=session_id,

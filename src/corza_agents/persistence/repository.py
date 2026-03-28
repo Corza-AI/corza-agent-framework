@@ -4,6 +4,7 @@ Corza Agent Framework — PostgreSQL Data Access Layer
 Async repository using SQLAlchemy + asyncpg.
 Requires: pip install "corza-agents[postgres]"
 """
+
 import json
 import math
 from datetime import UTC, datetime
@@ -79,6 +80,7 @@ class PostgresRepository(BaseRepository):
         # Check / set schema version
         async with self._session_factory() as db:
             from sqlalchemy import select
+
             result = await db.execute(
                 select(AgentSchemaVersionModel).where(AgentSchemaVersionModel.id == 1)
             )
@@ -144,20 +146,19 @@ class PostgresRepository(BaseRepository):
                 values["metadata_"] = values.pop("metadata")
             values["updated_at"] = datetime.now(UTC)
             await db.execute(
-                update(AgentSessionModel)
-                .where(AgentSessionModel.id == session_id)
-                .values(**values)
+                update(AgentSessionModel).where(AgentSessionModel.id == session_id).values(**values)
             )
             await db.commit()
 
     async def get_sessions_for_user(
-        self, user_id: str, tenant_id: str = "",
-        status: str | None = None, limit: int = 50,
+        self,
+        user_id: str,
+        tenant_id: str = "",
+        status: str | None = None,
+        limit: int = 50,
     ) -> list["AgentSession"]:
         async with self.session() as db:
-            query = select(AgentSessionModel).where(
-                AgentSessionModel.user_id == user_id
-            )
+            query = select(AgentSessionModel).where(AgentSessionModel.user_id == user_id)
             if tenant_id:
                 query = query.where(AgentSessionModel.tenant_id == tenant_id)
             if status:
@@ -207,8 +208,9 @@ class PostgresRepository(BaseRepository):
             await db.commit()
             return message
 
-    async def get_messages(self, session_id: str,
-                           include_summarized: bool = False) -> list[AgentMessage]:
+    async def get_messages(
+        self, session_id: str, include_summarized: bool = False
+    ) -> list[AgentMessage]:
         async with self.session() as db:
             query = (
                 select(AgentMessageModel)
@@ -220,8 +222,7 @@ class PostgresRepository(BaseRepository):
             result = await db.execute(query)
             return [self._message_from_model(m) for m in result.scalars().all()]
 
-    async def mark_messages_summarized(self, session_id: str,
-                                        message_ids: list[str]) -> None:
+    async def mark_messages_summarized(self, session_id: str, message_ids: list[str]) -> None:
         """Mark messages as consumed by summarization."""
         if not message_ids:
             return
@@ -315,12 +316,9 @@ class PostgresRepository(BaseRepository):
             await db.commit()
             return model.id
 
-    async def get_artifacts(self, session_id: str,
-                            artifact_type: str | None = None) -> list[dict]:
+    async def get_artifacts(self, session_id: str, artifact_type: str | None = None) -> list[dict]:
         async with self.session() as db:
-            query = select(AgentArtifactModel).where(
-                AgentArtifactModel.session_id == session_id
-            )
+            query = select(AgentArtifactModel).where(AgentArtifactModel.session_id == session_id)
             if artifact_type:
                 query = query.where(AgentArtifactModel.artifact_type == artifact_type)
             result = await db.execute(query.order_by(AgentArtifactModel.created_at))
@@ -387,9 +385,14 @@ class PostgresRepository(BaseRepository):
                 return None
             return model.value
 
-    async def set_memory(self, agent_id: str, key: str, value: Any,
-                         memory_type: str = "long_term",
-                         session_id: str | None = None) -> None:
+    async def set_memory(
+        self,
+        agent_id: str,
+        key: str,
+        value: Any,
+        memory_type: str = "long_term",
+        session_id: str | None = None,
+    ) -> None:
         async with self.session() as db:
             existing = await db.execute(
                 select(AgentMemoryModel).where(
@@ -417,18 +420,19 @@ class PostgresRepository(BaseRepository):
                 db.add(model)
             await db.commit()
 
-    async def list_memories(self, agent_id: str,
-                            memory_type: str | None = None) -> list[dict]:
+    async def list_memories(self, agent_id: str, memory_type: str | None = None) -> list[dict]:
         async with self.session() as db:
-            query = select(AgentMemoryModel).where(
-                AgentMemoryModel.agent_id == agent_id
-            )
+            query = select(AgentMemoryModel).where(AgentMemoryModel.agent_id == agent_id)
             if memory_type:
                 query = query.where(AgentMemoryModel.memory_type == memory_type)
             result = await db.execute(query.order_by(AgentMemoryModel.updated_at.desc()))
             return [
-                {"key": m.key, "value": m.value, "type": m.memory_type,
-                 "updated_at": m.updated_at.isoformat() if m.updated_at else None}
+                {
+                    "key": m.key,
+                    "value": m.value,
+                    "type": m.memory_type,
+                    "updated_at": m.updated_at.isoformat() if m.updated_at else None,
+                }
                 for m in result.scalars().all()
             ]
 
@@ -487,6 +491,7 @@ class PostgresRepository(BaseRepository):
     @staticmethod
     def _message_from_model(m: AgentMessageModel) -> AgentMessage:
         from corza_agents.core.types import ToolCall
+
         tool_calls = None
         if m.tool_calls:
             tool_calls = [ToolCall(**tc) for tc in m.tool_calls]

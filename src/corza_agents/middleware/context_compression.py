@@ -17,6 +17,7 @@ Design invariants:
   - Immutable — returns a new list, never mutates input
   - No LLM calls — deterministic string operations only
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -38,16 +39,18 @@ log = structlog.get_logger("corza_agents.context_compression")
 # Configuration
 # ══════════════════════════════════════════════════════════════════
 
+
 @dataclass
 class CompressionConfig:
     """
     Per-agent compression thresholds. Tune based on your model's
     context window and typical conversation length.
     """
+
     # Tier boundaries (measured from END of message list)
-    fresh_window: int = 10       # Last N messages: never touched
-    warm_window: int = 25        # 11-25 back: head+tail truncation
-    cold_window: int = 50        # 26-50 back: stub summaries
+    fresh_window: int = 10  # Last N messages: never touched
+    warm_window: int = 25  # 11-25 back: head+tail truncation
+    cold_window: int = 50  # 26-50 back: stub summaries
     # Beyond cold_window → expired (static placeholder)
 
     # Warm tier: how much to keep
@@ -71,6 +74,7 @@ _MARKER_WARM = "…(truncated)"
 # ══════════════════════════════════════════════════════════════════
 # Middleware
 # ══════════════════════════════════════════════════════════════════
+
 
 class ContextCompressionMiddleware(BaseMiddleware):
     """
@@ -117,6 +121,7 @@ class ContextCompressionMiddleware(BaseMiddleware):
 # Compression Logic
 # ══════════════════════════════════════════════════════════════════
 
+
 def progressive_compress(
     messages: list[AgentMessage],
     config: CompressionConfig | None = None,
@@ -158,24 +163,18 @@ def progressive_compress(
         if pos_from_end < config.fresh_window + config.warm_window:
             compressed = _compress_warm(content, config)
             if compressed is not content:
-                result[i] = msg.model_copy(
-                    update={"content": compressed, "token_count": 0}
-                )
+                result[i] = msg.model_copy(update={"content": compressed, "token_count": 0})
 
         # Cold tier — stub summary
         elif pos_from_end < config.fresh_window + config.cold_window:
             compressed = _compress_cold(content, config)
             if compressed is not content:
-                result[i] = msg.model_copy(
-                    update={"content": compressed, "token_count": 0}
-                )
+                result[i] = msg.model_copy(update={"content": compressed, "token_count": 0})
 
         # Expired tier — static placeholder
         else:
             if _MARKER_EXPIRED not in content:
-                result[i] = msg.model_copy(
-                    update={"content": _MARKER_EXPIRED, "token_count": 0}
-                )
+                result[i] = msg.model_copy(update={"content": _MARKER_EXPIRED, "token_count": 0})
 
     return result
 
@@ -188,8 +187,8 @@ def _compress_warm(text: str, config: CompressionConfig) -> str:
     # Small results: leave alone
     if len(text) <= config.warm_skip_below:
         return text
-    head = text[:config.warm_head_chars]
-    tail = text[-config.warm_tail_chars:]
+    head = text[: config.warm_head_chars]
+    tail = text[-config.warm_tail_chars :]
     omitted = len(text) - config.warm_head_chars - config.warm_tail_chars
     return f"{head}\n\n[... {omitted} chars omitted {_MARKER_WARM}]\n\n{tail}"
 
@@ -199,7 +198,7 @@ def _compress_cold(text: str, config: CompressionConfig) -> str:
     # Already cold or expired → skip
     if _MARKER_COLD in text or _MARKER_EXPIRED in text:
         return text
-    first_line = text.split("\n", 1)[0][:config.cold_summary_chars].strip()
+    first_line = text.split("\n", 1)[0][: config.cold_summary_chars].strip()
     if not first_line:
         return "[Result compressed: (empty)]"
     total_chars = len(text)

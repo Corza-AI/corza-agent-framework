@@ -10,6 +10,7 @@ Manages the context window to prevent overflow.
 All operations are DB-backed: old messages are marked as summarized
 (not deleted), and the summary is injected as a new message.
 """
+
 import json
 from typing import Any
 
@@ -150,11 +151,13 @@ class ContextManager:
         if total_tokens <= trigger_tokens and not force_compact:
             return messages
 
-        log.info("context_over_threshold",
-                 session_id=session_id,
-                 total_tokens=total_tokens,
-                 trigger=trigger_tokens,
-                 message_count=len(messages))
+        log.info(
+            "context_over_threshold",
+            session_id=session_id,
+            total_tokens=total_tokens,
+            trigger=trigger_tokens,
+            message_count=len(messages),
+        )
 
         # Layer 1: Truncate old tool call arguments
         messages = self._truncate_old_tool_args(messages, keep_recent=5)
@@ -209,9 +212,13 @@ class ContextManager:
                 msg = msg.model_copy(update={"tool_calls": new_calls, "token_count": 0})
 
             if i < cutoff and msg.role == MessageRole.TOOL_RESULT:
-                content = msg.content if isinstance(msg.content, str) else json.dumps(msg.content, default=str)
+                content = (
+                    msg.content
+                    if isinstance(msg.content, str)
+                    else json.dumps(msg.content, default=str)
+                )
                 if len(content) > max_arg_chars * 4:
-                    short = content[:max_arg_chars * 2] + "\n...(truncated)..." + content[-500:]
+                    short = content[: max_arg_chars * 2] + "\n...(truncated)..." + content[-500:]
                     msg = msg.model_copy(update={"content": short, "token_count": 0})
 
             truncated.append(msg)
@@ -257,11 +264,13 @@ class ContextManager:
         )
         await self._repo.add_message(summary_msg)
 
-        log.info("context_summarized",
-                 session_id=session_id,
-                 messages_summarized=len(to_summarize),
-                 messages_kept=len(to_keep),
-                 summary_tokens=estimate_tokens(summary_text))
+        log.info(
+            "context_summarized",
+            session_id=session_id,
+            messages_summarized=len(to_summarize),
+            messages_kept=len(to_keep),
+            summary_tokens=estimate_tokens(summary_text),
+        )
 
         return [summary_msg] + to_keep
 
@@ -291,9 +300,8 @@ class ContextManager:
         )
 
         from corza_agents.core.types import LLMResponse
-        summary_messages = [
-            AgentMessage(role=MessageRole.USER, content=prompt)
-        ]
+
+        summary_messages = [AgentMessage(role=MessageRole.USER, content=prompt)]
         response: LLMResponse = await llm.complete_with_tools(
             messages=summary_messages,
             tools=[],

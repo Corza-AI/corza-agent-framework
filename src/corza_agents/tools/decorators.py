@@ -4,6 +4,7 @@ Corza Agent Framework — Tool Decorators
 @tool decorator for defining tools as simple Python functions.
 Inspired by CrewAI and Pydantic AI's decorator patterns.
 """
+
 import asyncio
 import inspect
 import types
@@ -114,6 +115,7 @@ def tool(
     automatically injected by the framework — they don't appear in the
     tool's JSON schema.
     """
+
     def decorator(fn: Callable) -> Callable:
         tool_name = name or fn.__name__
         tool_desc = description or (fn.__doc__ or "").strip().split("\n")[0] or tool_name

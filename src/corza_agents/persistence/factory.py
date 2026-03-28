@@ -15,6 +15,7 @@ Usage:
     # Production
     repo = create_repository("postgres", db_url="postgresql+asyncpg://...")
 """
+
 from corza_agents.persistence.base import BaseRepository
 
 
@@ -36,18 +37,18 @@ def create_repository(backend: str = "memory", **kwargs) -> BaseRepository:
 
     if backend == "memory":
         from corza_agents.persistence.memory import InMemoryRepository
+
         return InMemoryRepository()
 
     elif backend == "sqlite":
         from corza_agents.persistence.sqlite import SQLiteRepository
+
         return SQLiteRepository(**kwargs)
 
     elif backend in ("postgres", "postgresql"):
         from corza_agents.persistence.repository import PostgresRepository
+
         return PostgresRepository(**kwargs)
 
     else:
-        raise ValueError(
-            f"Unknown backend: '{backend}'. "
-            f"Choose from: memory, sqlite, postgres"
-        )
+        raise ValueError(f"Unknown backend: '{backend}'. Choose from: memory, sqlite, postgres")

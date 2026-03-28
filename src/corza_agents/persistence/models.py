@@ -4,6 +4,7 @@ Corza Agent Framework — SQLAlchemy Models
 Async-first DB models for sessions, messages, tool executions, and artifacts.
 These live alongside existing application tables — no conflicts.
 """
+
 import uuid
 from datetime import UTC, datetime
 
@@ -24,6 +25,7 @@ from sqlalchemy.orm import DeclarativeBase, relationship
 
 class Base(DeclarativeBase):
     """Base class for agent framework tables."""
+
     pass
 
 
@@ -41,6 +43,7 @@ def _uuid():
 
 SCHEMA_VERSION = 1  # Increment when schema changes
 
+
 class AgentSchemaVersionModel(Base):
     __tablename__ = "af_schema_version"
 
@@ -52,6 +55,7 @@ class AgentSchemaVersionModel(Base):
 # ══════════════════════════════════════════════════════════════════════
 # Sessions
 # ══════════════════════════════════════════════════════════════════════
+
 
 class AgentSessionModel(Base):
     __tablename__ = "af_sessions"
@@ -73,10 +77,15 @@ class AgentSessionModel(Base):
     turn_count = Column(Integer, nullable=False, default=0)
     error = Column(Text, nullable=True)
 
-    messages = relationship("AgentMessageModel", back_populates="session",
-                            cascade="all, delete-orphan", order_by="AgentMessageModel.created_at")
-    tool_executions = relationship("AgentToolExecutionModel", back_populates="session",
-                                   cascade="all, delete-orphan")
+    messages = relationship(
+        "AgentMessageModel",
+        back_populates="session",
+        cascade="all, delete-orphan",
+        order_by="AgentMessageModel.created_at",
+    )
+    tool_executions = relationship(
+        "AgentToolExecutionModel", back_populates="session", cascade="all, delete-orphan"
+    )
     children = relationship("AgentSessionModel", backref="parent", remote_side=[id])
 
     __table_args__ = (
@@ -89,6 +98,7 @@ class AgentSessionModel(Base):
 # ══════════════════════════════════════════════════════════════════════
 # Messages
 # ══════════════════════════════════════════════════════════════════════
+
 
 class AgentMessageModel(Base):
     __tablename__ = "af_messages"
@@ -107,14 +117,13 @@ class AgentMessageModel(Base):
 
     session = relationship("AgentSessionModel", back_populates="messages")
 
-    __table_args__ = (
-        Index("ix_af_messages_session_created", "session_id", "created_at"),
-    )
+    __table_args__ = (Index("ix_af_messages_session_created", "session_id", "created_at"),)
 
 
 # ══════════════════════════════════════════════════════════════════════
 # Tool Executions (Audit Trail)
 # ══════════════════════════════════════════════════════════════════════
+
 
 class AgentToolExecutionModel(Base):
     __tablename__ = "af_tool_executions"
@@ -133,14 +142,13 @@ class AgentToolExecutionModel(Base):
 
     session = relationship("AgentSessionModel", back_populates="tool_executions")
 
-    __table_args__ = (
-        Index("ix_af_tool_exec_session", "session_id", "created_at"),
-    )
+    __table_args__ = (Index("ix_af_tool_exec_session", "session_id", "created_at"),)
 
 
 # ══════════════════════════════════════════════════════════════════════
 # Artifacts (agent-generated outputs — reports, data, files)
 # ══════════════════════════════════════════════════════════════════════
+
 
 class AgentArtifactModel(Base):
     __tablename__ = "af_artifacts"
@@ -159,6 +167,7 @@ class AgentArtifactModel(Base):
 # Audit Log
 # ══════════════════════════════════════════════════════════════════════
 
+
 class AgentAuditLogModel(Base):
     __tablename__ = "af_audit_log"
 
@@ -174,14 +183,13 @@ class AgentAuditLogModel(Base):
     llm_latency_ms = Column(Float, nullable=True)
     timestamp = Column(DateTime(timezone=True), nullable=False, default=_utcnow)
 
-    __table_args__ = (
-        Index("ix_af_audit_session_time", "session_id", "timestamp"),
-    )
+    __table_args__ = (Index("ix_af_audit_session_time", "session_id", "timestamp"),)
 
 
 # ══════════════════════════════════════════════════════════════════════
 # Memory Store (cross-session persistent memory)
 # ══════════════════════════════════════════════════════════════════════
+
 
 class AgentMemoryModel(Base):
     __tablename__ = "af_memory"
@@ -196,6 +204,4 @@ class AgentMemoryModel(Base):
     created_at = Column(DateTime(timezone=True), nullable=False, default=_utcnow)
     updated_at = Column(DateTime(timezone=True), nullable=False, default=_utcnow, onupdate=_utcnow)
 
-    __table_args__ = (
-        Index("ix_af_memory_agent_key", "agent_id", "key", unique=True),
-    )
+    __table_args__ = (Index("ix_af_memory_agent_key", "agent_id", "key", unique=True),)

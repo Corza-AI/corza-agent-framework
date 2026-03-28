@@ -11,6 +11,7 @@ Three detection mechanisms:
 On soft detection: injects a system message nudging the agent to wrap up.
 On hard detection: sets _session_complete in working memory → engine stops.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -45,10 +46,16 @@ class LoopGuardConfig:
 
     # Management-only: N turns with ONLY these tools (no substantive work)
     max_management_only_turns: int = 5
-    management_tools: frozenset[str] = frozenset({
-        "manage_plan", "manage_notes", "manage_knowledge",
-        "manage_objective", "manage_context", "manage_skill",
-    })
+    management_tools: frozenset[str] = frozenset(
+        {
+            "manage_plan",
+            "manage_notes",
+            "manage_knowledge",
+            "manage_objective",
+            "manage_context",
+            "manage_skill",
+        }
+    )
 
     # Give one soft warning before hard stopping
     soft_warning_before_hard_stop: bool = True
@@ -95,8 +102,7 @@ class LoopGuardMiddleware(BaseMiddleware):
 
     def _soft_warn(self, context: ExecutionContext, reason: str) -> None:
         """Store a warning in working memory. Injected on next LLM call."""
-        log.info("loop_guard_soft_warning",
-                 session_id=context.session_id, reason=reason)
+        log.info("loop_guard_soft_warning", session_id=context.session_id, reason=reason)
         if context.working_memory:
             context.working_memory.store(
                 "_loop_guard_warning",
@@ -107,8 +113,7 @@ class LoopGuardMiddleware(BaseMiddleware):
 
     def _force_stop(self, context: ExecutionContext, reason: str) -> None:
         """Force session termination via working memory flag."""
-        log.warning("loop_guard_force_stop",
-                    session_id=context.session_id, reason=reason)
+        log.warning("loop_guard_force_stop", session_id=context.session_id, reason=reason)
         if context.working_memory:
             context.working_memory.store("_session_complete", True)
             context.working_memory.store(
@@ -170,8 +175,7 @@ class LoopGuardMiddleware(BaseMiddleware):
         # Track management-only turns (no text + only management tools)
         if response.tool_calls:
             all_mgmt = all(
-                tc.tool_name in self._config.management_tools
-                for tc in response.tool_calls
+                tc.tool_name in self._config.management_tools for tc in response.tool_calls
             )
             if all_mgmt and not has_text:
                 self._mgmt_only_turns[sid] = self._mgmt_only_turns.get(sid, 0) + 1
@@ -208,8 +212,9 @@ class LoopGuardMiddleware(BaseMiddleware):
         n = self._config.max_identical_calls
         recent = self._call_hashes[sid][-n:]
         if len(recent) == n and len(set(recent)) == 1:
-            log.warning("loop_guard_identical_calls",
-                        session_id=sid, tool=tool_call.tool_name, count=n)
+            log.warning(
+                "loop_guard_identical_calls", session_id=sid, tool=tool_call.tool_name, count=n
+            )
             self._force_stop(
                 context,
                 f"Identical tool call detected: {tool_call.tool_name} "

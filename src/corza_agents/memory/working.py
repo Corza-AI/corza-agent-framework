@@ -6,6 +6,7 @@ Fast, in-process, per-session. NOT persisted (session memory handles that).
 
 Inspired by Sentinel agent's memory.py (data cache, findings, red flags).
 """
+
 from typing import Any
 
 import structlog
@@ -61,14 +62,17 @@ class WorkingMemory:
     # Findings — structured observations accumulated during the run
     # ══════════════════════════════════════════════════════════════════
 
-    def add_finding(self, description: str, category: str = "",
-                    evidence: dict | None = None, **kwargs) -> None:
-        self._findings.append({
-            "description": description,
-            "category": category,
-            "evidence": evidence or {},
-            **kwargs,
-        })
+    def add_finding(
+        self, description: str, category: str = "", evidence: dict | None = None, **kwargs
+    ) -> None:
+        self._findings.append(
+            {
+                "description": description,
+                "category": category,
+                "evidence": evidence or {},
+                **kwargs,
+            }
+        )
 
     @property
     def findings(self) -> list[dict[str, Any]]:
@@ -145,7 +149,7 @@ class WorkingMemory:
 
         text = "\n".join(parts)
         if len(text) > max_chars:
-            text = text[:max_chars - 50] + "\n\n... (working memory truncated)"
+            text = text[: max_chars - 50] + "\n\n... (working memory truncated)"
         return text
 
     @staticmethod
@@ -154,7 +158,9 @@ class WorkingMemory:
             return value[:max_length] + ("..." if len(value) > max_length else "")
         if isinstance(value, dict):
             keys = list(value.keys())[:5]
-            return f"dict with keys: {keys}" + (f" (+{len(value) - 5} more)" if len(value) > 5 else "")
+            return f"dict with keys: {keys}" + (
+                f" (+{len(value) - 5} more)" if len(value) > 5 else ""
+            )
         if isinstance(value, list):
             return f"list with {len(value)} items"
         return str(value)[:max_length]

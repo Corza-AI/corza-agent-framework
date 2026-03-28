@@ -4,6 +4,7 @@ Corza Agent Framework — Audit Middleware
 Logs every LLM call and tool execution to the audit table.
 Provides full traceability for compliance and debugging.
 """
+
 import json
 
 import structlog
@@ -49,7 +50,7 @@ class AuditMiddleware(BaseMiddleware):
             event_type="llm_call",
             actor=context.agent_name,
             action=f"LLM call → {response.model} (stop={response.stop_reason.value})"
-                   + (f", tools=[{', '.join(tool_names)}]" if tool_names else ""),
+            + (f", tools=[{', '.join(tool_names)}]" if tool_names else ""),
             detail={
                 "model": response.model,
                 "stop_reason": response.stop_reason.value,
@@ -106,8 +107,7 @@ class AuditMiddleware(BaseMiddleware):
             },
         )
 
-    async def on_turn_complete(self, turn_number: int,
-                                context: ExecutionContext) -> None:
+    async def on_turn_complete(self, turn_number: int, context: ExecutionContext) -> None:
         await self._repo.log_audit(
             session_id=context.session_id,
             event_type="turn_complete",

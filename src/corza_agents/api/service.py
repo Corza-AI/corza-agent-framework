@@ -12,6 +12,7 @@ Usage:
     async for event in service.send_message(session.id, "Hello"):
         print(event)
 """
+
 from collections.abc import AsyncIterator
 from typing import Any
 
@@ -68,13 +69,13 @@ class AgentService:
         metadata: dict | None = None,
     ) -> AgentSession:
         if agent_id not in self._agents:
-            raise KeyError(
-                f"Agent '{agent_id}' not found. Available: {list(self._agents.keys())}"
-            )
+            raise KeyError(f"Agent '{agent_id}' not found. Available: {list(self._agents.keys())}")
         session_id = _uuid()
         session = AgentSession(
-            id=session_id, agent_id=agent_id,
-            user_id=user_id, tenant_id=tenant_id,
+            id=session_id,
+            agent_id=agent_id,
+            user_id=user_id,
+            tenant_id=tenant_id,
             metadata=metadata or {},
         )
         await self._orchestrator.repo.create_session(session)
@@ -84,8 +85,11 @@ class AgentService:
         return await self._orchestrator.repo.get_session(session_id)
 
     async def get_sessions_for_user(
-        self, user_id: str, tenant_id: str = "",
-        status: str | None = None, limit: int = 50,
+        self,
+        user_id: str,
+        tenant_id: str = "",
+        status: str | None = None,
+        limit: int = 50,
     ) -> list[AgentSession]:
         return await self._orchestrator.repo.get_sessions_for_user(
             user_id, tenant_id, status, limit
@@ -111,7 +115,11 @@ class AgentService:
         if not agent_def:
             raise KeyError(f"Agent '{session.agent_id}' not found")
         async for event in self._orchestrator.run(
-            session_id, content, agent_def, metadata, variables,
+            session_id,
+            content,
+            agent_def,
+            metadata,
+            variables,
         ):
             yield event
 
@@ -133,14 +141,18 @@ class AgentService:
         return final_output, final_error
 
     async def get_messages(
-        self, session_id: str, include_summarized: bool = False,
+        self,
+        session_id: str,
+        include_summarized: bool = False,
     ) -> list[AgentMessage]:
         return await self._orchestrator.repo.get_messages(session_id, include_summarized)
 
     # ── Artifacts ─────────────────────────────────────────────────
 
     async def get_artifacts(
-        self, session_id: str, artifact_type: str | None = None,
+        self,
+        session_id: str,
+        artifact_type: str | None = None,
     ) -> list[dict]:
         return await self._orchestrator.repo.get_artifacts(session_id, artifact_type)
 
@@ -180,12 +192,18 @@ class AgentService:
     # ── Memory ────────────────────────────────────────────────────
 
     async def get_agent_memories(
-        self, agent_id: str, memory_type: str | None = None,
+        self,
+        agent_id: str,
+        memory_type: str | None = None,
     ) -> list[dict]:
         return await self._orchestrator.repo.list_memories(agent_id, memory_type)
 
     async def set_agent_memory(
-        self, agent_id: str, key: str, value: Any, memory_type: str = "long_term",
+        self,
+        agent_id: str,
+        key: str,
+        value: Any,
+        memory_type: str = "long_term",
     ) -> None:
         await self._orchestrator.repo.set_memory(agent_id, key, value, memory_type)
 

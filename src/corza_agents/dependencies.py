@@ -13,6 +13,7 @@ Usage:
     ):
         session = await service.create_session("assistant", user.user_id, user.tenant_id)
 """
+
 from starlette.requests import Request
 
 from corza_agents.api.service import AgentService

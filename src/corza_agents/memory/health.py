@@ -14,6 +14,7 @@ Thresholds (configurable per agent):
   - 0.85: Warn agent to wrap up (one-shot injection)
   - 0.90: Hard stop — force one final response, no tools
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -36,23 +37,25 @@ class ContextHealthConfig:
 
     Or configure on the engine directly.
     """
-    max_tokens: int = 200_000       # Model's context window
-    max_messages: int = 100         # Soft cap for health score weighting
+
+    max_tokens: int = 200_000  # Model's context window
+    max_messages: int = 100  # Soft cap for health score weighting
 
     # Threshold tiers (0.0 to 1.0)
-    compress_threshold: float = 0.40   # Start progressive compression
-    compact_threshold: float = 0.80    # Trigger LLM-based summarization
-    warn_threshold: float = 0.85       # Warn agent to wrap up
+    compress_threshold: float = 0.40  # Start progressive compression
+    compact_threshold: float = 0.80  # Trigger LLM-based summarization
+    warn_threshold: float = 0.85  # Warn agent to wrap up
     hard_stop_threshold: float = 0.90  # Force final turn, no tools
 
 
 @dataclass
 class HealthAction:
     """What the engine should do this turn based on context health."""
-    should_compress: bool = False       # Apply progressive compression
-    should_compact: bool = False        # Trigger LLM-based summarization
-    should_warn_agent: bool = False     # Inject wrap-up warning
-    should_hard_stop: bool = False      # Final turn, then break
+
+    should_compress: bool = False  # Apply progressive compression
+    should_compact: bool = False  # Trigger LLM-based summarization
+    should_warn_agent: bool = False  # Inject wrap-up warning
+    should_hard_stop: bool = False  # Final turn, then break
     health_score: float = 0.0
 
 
@@ -68,13 +71,9 @@ def compute_health_score(
     measures what the API will reject. Message count (30% weight) catches
     cases where many small messages accumulate.
     """
-    token_ratio = (
-        min(total_input_tokens / config.max_tokens, 1.0)
-        if config.max_tokens > 0 else 0.0
-    )
+    token_ratio = min(total_input_tokens / config.max_tokens, 1.0) if config.max_tokens > 0 else 0.0
     message_ratio = (
-        min(message_count / config.max_messages, 1.0)
-        if config.max_messages > 0 else 0.0
+        min(message_count / config.max_messages, 1.0) if config.max_messages > 0 else 0.0
     )
     return (token_ratio * 0.7) + (message_ratio * 0.3)
 

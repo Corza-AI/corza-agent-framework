@@ -6,6 +6,7 @@ Resolves tool schemas for LLM calls, executes tools with timeout/retry/audit.
 
 Inspired by Sentinel tool_registry.py + CrewAI @tool + Deep Agents StructuredTool.
 """
+
 import asyncio
 import time
 from typing import Any
@@ -121,8 +122,11 @@ class ToolRegistry:
         # For non-FUNCTION tools without a handler, dispatch to type-based handlers
         if not tool_def.handler and tool_def.tool_type != ToolType.FUNCTION:
             from corza_agents.tools.handlers import dispatch_tool
+
             return await dispatch_tool(
-                tool_def, tool_call, context,
+                tool_def,
+                tool_call,
+                context,
                 vault_resolver=self._vault_resolver,
             )
 
@@ -163,22 +167,29 @@ class ToolRegistry:
                     tool_name=tool_call.tool_name,
                     tool_call_id=tool_call.id,
                 )
-                log.warning("tool_timeout", tool=tool_call.tool_name,
-                           attempt=attempt + 1, timeout=tool_def.timeout_seconds)
+                log.warning(
+                    "tool_timeout",
+                    tool=tool_call.tool_name,
+                    attempt=attempt + 1,
+                    timeout=tool_def.timeout_seconds,
+                )
 
             except Exception as e:
                 duration = (time.time() - start) * 1000
                 last_error = e
-                log.warning("tool_error", tool=tool_call.tool_name,
-                           attempt=attempt + 1, error=str(e)[:200])
+                log.warning(
+                    "tool_error", tool=tool_call.tool_name, attempt=attempt + 1, error=str(e)[:200]
+                )
 
             if attempt < attempts - 1:
-                await asyncio.sleep(min(2 ** attempt, 10))
+                await asyncio.sleep(min(2**attempt, 10))
 
         return ToolResult(
             tool_call_id=tool_call.id,
             tool_name=tool_call.tool_name,
-            status=ToolStatus.TIMEOUT if isinstance(last_error, ToolTimeoutError) else ToolStatus.ERROR,
+            status=ToolStatus.TIMEOUT
+            if isinstance(last_error, ToolTimeoutError)
+            else ToolStatus.ERROR,
             duration_ms=(time.time() - start) * 1000,
             error=str(last_error)[:2000] if last_error else "Unknown error",
         )
@@ -191,6 +202,7 @@ class ToolRegistry:
     ) -> Any:
         """Invoke the tool handler, injecting context if the function accepts it."""
         import inspect
+
         handler = tool_def.handler
         sig = inspect.signature(handler)
 

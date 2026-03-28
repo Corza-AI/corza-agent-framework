@@ -13,6 +13,7 @@ Flow:
 
 Production-grade ReAct loop implementation.
 """
+
 import asyncio
 import json
 from collections.abc import AsyncIterator
@@ -91,6 +92,7 @@ def _json_safe(obj: Any) -> Any:
     except (TypeError, ValueError):
         return _SKIP
 
+
 _SKIP = object()
 
 
@@ -144,7 +146,9 @@ class AgentEngine:
         # Mark for cancellation — the run loop checks this at the top of each turn
         self._cancelled_sessions.add(session_id)
         await self._repo.update_session(
-            session_id, status=SessionStatus.CANCELLED, error="Cancelled by user",
+            session_id,
+            status=SessionStatus.CANCELLED,
+            error="Cancelled by user",
         )
         cancelled_count += 1
         log.info("session_cancelled", session_id=session_id, cascade=cascade)
@@ -157,12 +161,12 @@ class AgentEngine:
                 if child_id:
                     self._cancelled_sessions.add(child_id)
                     await self._repo.update_session(
-                        child_id, status=SessionStatus.CANCELLED,
+                        child_id,
+                        status=SessionStatus.CANCELLED,
                         error="Cancelled (parent cancelled)",
                     )
                     cancelled_count += 1
-                    log.info("child_session_cancelled",
-                             child_id=child_id, parent_id=session_id)
+                    log.info("child_session_cancelled", child_id=child_id, parent_id=session_id)
 
         return cancelled_count
 
@@ -189,7 +193,11 @@ class AgentEngine:
 
         async with session_lock:
             async for event in self._run_locked(
-                session_id, user_message, agent_def, metadata, variables,
+                session_id,
+                user_message,
+                agent_def,
+                metadata,
+                variables,
             ):
                 yield event
 
@@ -251,11 +259,11 @@ class AgentEngine:
                     self._cancelled_sessions.discard(session_id)
                     log.info("session_cancel_detected", session_id=session_id, turn=turn)
                     await self._repo.update_session(
-                        session_id, status=SessionStatus.CANCELLED,
+                        session_id,
+                        status=SessionStatus.CANCELLED,
                         error="Cancelled by user",
                     )
-                    yield error_event(session_id, "cancelled",
-                                      "Session cancelled by user.", turn)
+                    yield error_event(session_id, "cancelled", "Session cancelled by user.", turn)
                     return
 
                 turn += 1
@@ -276,17 +284,23 @@ class AgentEngine:
 
                 # Build context (system prompt + messages, with compaction)
                 system_prompt = build_system_prompt(
-                    agent_def, skills=skills,
+                    agent_def,
+                    skills=skills,
                     working_memory_context=working_memory.get_context_for_llm(),
                     variables=variables or {},
-                    registered_tools=self._tools.get_schemas(all_tool_names) if all_tool_names else None,
+                    registered_tools=self._tools.get_schemas(all_tool_names)
+                    if all_tool_names
+                    else None,
                     knowledge_index=knowledge_index,
                     skill_index=skill_index,
                     objective=objective,
                     plan=plan,
                 )
                 messages = await self._context_manager.build_context(
-                    session_id, system_prompt, agent_def.model, llm=self._llm,
+                    session_id,
+                    system_prompt,
+                    agent_def.model,
+                    llm=self._llm,
                     force_compact=force_compact,
                 )
 
@@ -336,12 +350,15 @@ class AgentEngine:
                     full_text, tool_calls, usage, stop_reason = await llm_future
                 except (LLMError, ContextOverflowError) as e:
                     # Turn-level recovery: don't fail the session, allow resume
-                    log.error("turn_llm_failed", session_id=session_id, turn=turn,
-                              error=str(e)[:500])
-                    yield error_event(session_id, "turn_error", str(e)[:1000], turn,
-                                      recoverable=True)
+                    log.error(
+                        "turn_llm_failed", session_id=session_id, turn=turn, error=str(e)[:500]
+                    )
+                    yield error_event(
+                        session_id, "turn_error", str(e)[:1000], turn, recoverable=True
+                    )
                     await self._repo.update_session(
-                        session_id, status=SessionStatus.WAITING_INPUT,
+                        session_id,
+                        status=SessionStatus.WAITING_INPUT,
                         error=str(e)[:2000],
                     )
                     for mw in self._middleware:
@@ -357,8 +374,11 @@ class AgentEngine:
 
                 # Run middleware: after_llm_call
                 llm_response = LLMResponse(
-                    content=full_text, tool_calls=tool_calls,
-                    stop_reason=stop_reason, usage=usage, model=agent_def.model,
+                    content=full_text,
+                    tool_calls=tool_calls,
+                    stop_reason=stop_reason,
+                    usage=usage,
+                    model=agent_def.model,
                 )
                 for mw in self._middleware:
                     llm_response = await mw.after_llm_call(llm_response, context)
@@ -394,8 +414,10 @@ class AgentEngine:
 
                     if current_tc is None:
                         result = ToolResult(
-                            tool_call_id=tc.id, tool_name=tc.tool_name,
-                            status=ToolStatus.DENIED, error="Blocked by middleware",
+                            tool_call_id=tc.id,
+                            tool_name=tc.tool_name,
+                            status=ToolStatus.DENIED,
+                            error="Blocked by middleware",
                         )
                     else:
                         result = await self._tools.execute(current_tc, context)
@@ -444,9 +466,13 @@ class AgentEngine:
                     if isinstance(result.output, dict):
                         _card_data = result.output.get("card_data")
                     yield tool_result_event(
-                        session_id, tc.tool_name, tc.id,
-                        result.status.value, result.duration_ms,
-                        output_preview, turn,
+                        session_id,
+                        tc.tool_name,
+                        tc.id,
+                        result.status.value,
+                        result.duration_ms,
+                        output_preview,
+                        turn,
                         card_data=_card_data,
                     )
 
@@ -460,9 +486,13 @@ class AgentEngine:
                 # Without this, the engine runs another turn and the LLM
                 # re-generates its report text, causing duplication.
                 if working_memory.get("_task_complete") or working_memory.get("_session_complete"):
-                    log.info("stop_signal_detected", session_id=session_id, turn=turn,
-                             task_complete=bool(working_memory.get("_task_complete")),
-                             session_complete=bool(working_memory.get("_session_complete")))
+                    log.info(
+                        "stop_signal_detected",
+                        session_id=session_id,
+                        turn=turn,
+                        task_complete=bool(working_memory.get("_task_complete")),
+                        session_complete=bool(working_memory.get("_session_complete")),
+                    )
                     break  # Exit loop → finalize session
 
                 # ── External termination callback ──────────────────────
@@ -473,28 +503,29 @@ class AgentEngine:
                 if callable(_should_continue):
                     try:
                         if not _should_continue(context):
-                            log.info("should_continue_false",
-                                     session_id=session_id, turn=turn)
+                            log.info("should_continue_false", session_id=session_id, turn=turn)
                             break
                     except Exception as _sc_err:
-                        log.warning("should_continue_error",
-                                    session_id=session_id,
-                                    error=str(_sc_err)[:200])
+                        log.warning(
+                            "should_continue_error", session_id=session_id, error=str(_sc_err)[:200]
+                        )
 
                 # ── Context health monitoring ──────────────────────────
                 health_config = agent_def.metadata.get("context_health")
                 if isinstance(health_config, ContextHealthConfig):
                     messages_count = len(await self._repo.get_messages(session_id))
                     health = assess_health(
-                        total_usage.input_tokens, messages_count,
-                        health_config, already_warned=context.metadata.get(
-                            "_health_warned", False),
+                        total_usage.input_tokens,
+                        messages_count,
+                        health_config,
+                        already_warned=context.metadata.get("_health_warned", False),
                     )
 
                     if health.should_hard_stop:
                         # Force one final LLM call with no tools
-                        log.warning("context_hard_stop",
-                                    session_id=session_id, score=health.health_score)
+                        log.warning(
+                            "context_hard_stop", session_id=session_id, score=health.health_score
+                        )
                         stop_msg = AgentMessage(
                             session_id=session_id,
                             role=MessageRole.USER,
@@ -503,22 +534,26 @@ class AgentEngine:
                         await self._repo.add_message(stop_msg)
                         break  # Exit loop → finalize
 
-                    if health.should_compact and not context.metadata.get(
-                        "_compacted", False
-                    ):
+                    if health.should_compact and not context.metadata.get("_compacted", False):
                         # Trigger LLM-based summarization of old messages
                         context.metadata["_compacted"] = True
-                        log.info("context_compaction_triggered",
-                                 session_id=session_id, score=health.health_score)
+                        log.info(
+                            "context_compaction_triggered",
+                            session_id=session_id,
+                            score=health.health_score,
+                        )
                         system_prompt = build_system_prompt(
-                            agent_def, skills=skills,
+                            agent_def,
+                            skills=skills,
                             working_memory_context=working_memory.get_context_for_llm(),
                             variables=variables or {},
                             objective=objective,
                             plan=working_memory.get("_plan") or [],
                         )
                         await self._context_manager.build_context(
-                            session_id, system_prompt, agent_def.model,
+                            session_id,
+                            system_prompt,
+                            agent_def.model,
                             llm=self._llm,
                         )
 
@@ -559,8 +594,12 @@ class AgentEngine:
 
             at_max = turn >= agent_def.max_turns
             if at_max:
-                log.info("max_turns_reached", session_id=session_id, turns=turn,
-                         max_turns=agent_def.max_turns)
+                log.info(
+                    "max_turns_reached",
+                    session_id=session_id,
+                    turns=turn,
+                    max_turns=agent_def.max_turns,
+                )
 
             await self._repo.update_session(
                 session_id,
@@ -572,15 +611,19 @@ class AgentEngine:
             )
 
             yield session_completed(
-                session_id, turn,
-                total_usage.input_tokens, total_usage.output_tokens,
+                session_id,
+                turn,
+                total_usage.input_tokens,
+                total_usage.output_tokens,
                 final_output,
             )
 
         except Exception as e:
             log.exception("engine_error", session_id=session_id)
             await self._repo.update_session(
-                session_id, status=SessionStatus.FAILED, error=str(e)[:2000],
+                session_id,
+                status=SessionStatus.FAILED,
+                error=str(e)[:2000],
             )
             yield error_event(session_id, "engine_error", str(e)[:1000], turn)
             for mw in self._middleware:
@@ -620,16 +663,24 @@ class AgentEngine:
 
         for model_idx, current_model in enumerate(models_to_try):
             if model_idx > 0:
-                log.warning("llm_fallback",
-                            session_id=session_id,
-                            failed_model=models_to_try[model_idx - 1],
-                            fallback_model=current_model,
-                            attempt=model_idx)
+                log.warning(
+                    "llm_fallback",
+                    session_id=session_id,
+                    failed_model=models_to_try[model_idx - 1],
+                    fallback_model=current_model,
+                    attempt=model_idx,
+                )
 
             try:
                 return await self._call_single_model(
-                    session_id, messages, tools, agent_def, system_prompt,
-                    turn, current_model, on_stream_event=on_stream_event,
+                    session_id,
+                    messages,
+                    tools,
+                    agent_def,
+                    system_prompt,
+                    turn,
+                    current_model,
+                    on_stream_event=on_stream_event,
                 )
             except LLMError as e:
                 last_error = e
@@ -688,15 +739,11 @@ class AgentEngine:
                             full_text += chunk.text
                             # Emit real-time text streaming event
                             if on_stream_event:
-                                await on_stream_event(
-                                    text_delta(session_id, chunk.text, turn)
-                                )
+                                await on_stream_event(text_delta(session_id, chunk.text, turn))
                         elif chunk.type == "thinking_delta" and chunk.text:
                             # Emit real-time thinking streaming event
                             if on_stream_event:
-                                await on_stream_event(
-                                    thinking_delta(session_id, chunk.text, turn)
-                                )
+                                await on_stream_event(thinking_delta(session_id, chunk.text, turn))
                         elif chunk.type == "tool_call_end" and chunk.tool_call:
                             tool_calls.append(chunk.tool_call)
                             # Emit tool_call event for SSE buffering
@@ -728,7 +775,9 @@ class AgentEngine:
                 except TimeoutError:
                     raise LLMError(
                         f"LLM call timed out after {timeout}s",
-                        provider="", model=agent_def.model, retryable=True,
+                        provider="",
+                        model=agent_def.model,
+                        retryable=True,
                     )
 
                 return full_text, tool_calls, usage, stop_reason
@@ -736,31 +785,41 @@ class AgentEngine:
             except LLMRateLimitError as e:
                 if attempt >= max_retries:
                     raise
-                wait = e.retry_after_seconds or min(2 ** attempt, 30)
-                log.warning("llm_rate_limit_retry",
-                            session_id=session_id, attempt=attempt + 1,
-                            max_retries=max_retries, wait_seconds=wait)
+                wait = e.retry_after_seconds or min(2**attempt, 30)
+                log.warning(
+                    "llm_rate_limit_retry",
+                    session_id=session_id,
+                    attempt=attempt + 1,
+                    max_retries=max_retries,
+                    wait_seconds=wait,
+                )
                 await asyncio.sleep(wait)
 
             except ContextOverflowError:
                 if context_compacted or attempt >= max_retries:
                     raise
-                log.warning("context_overflow_retry",
-                            session_id=session_id, attempt=attempt + 1)
+                log.warning("context_overflow_retry", session_id=session_id, attempt=attempt + 1)
                 # Compact context and retry once
                 messages = await self._context_manager.build_context(
-                    session_id, system_prompt, agent_def.model, llm=self._llm,
+                    session_id,
+                    system_prompt,
+                    agent_def.model,
+                    llm=self._llm,
                 )
                 context_compacted = True
 
             except LLMError as e:
                 if not e.retryable or attempt >= max_retries:
                     raise
-                wait = min(2 ** attempt, 30)
-                log.warning("llm_error_retry",
-                            session_id=session_id, attempt=attempt + 1,
-                            max_retries=max_retries, wait_seconds=wait,
-                            error=str(e)[:200])
+                wait = min(2**attempt, 30)
+                log.warning(
+                    "llm_error_retry",
+                    session_id=session_id,
+                    attempt=attempt + 1,
+                    max_retries=max_retries,
+                    wait_seconds=wait,
+                    error=str(e)[:200],
+                )
                 await asyncio.sleep(wait)
 
         # Should not reach here, but just in case
@@ -797,10 +856,12 @@ class AgentEngine:
                 if m.get("key", "").startswith("skill:"):
                     val = m.get("value", {})
                     desc = val.get("description", "") if isinstance(val, dict) else ""
-                    result.append({
-                        "name": m["key"].removeprefix("skill:"),
-                        "description": desc,
-                    })
+                    result.append(
+                        {
+                            "name": m["key"].removeprefix("skill:"),
+                            "description": desc,
+                        }
+                    )
             return result
         except Exception:
             return []

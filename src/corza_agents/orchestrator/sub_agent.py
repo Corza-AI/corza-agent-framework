@@ -10,6 +10,7 @@ Each sub-agent gets its own DB session, linked to the parent via
 parent_session_id. Sessions persist — the orchestrator can return
 to a sub-agent across multiple turns.
 """
+
 import json
 from collections.abc import Awaitable, Callable
 from typing import Any
@@ -83,15 +84,18 @@ class SubAgentRunner:
 
         user_message = self._build_task_message(task, context_data)
 
-        log.info("subagent_start",
-                 child_session_id=child_session_id,
-                 parent_session_id=parent_session_id,
-                 agent_name=agent_def.name,
-                 task_preview=task[:100])
+        log.info(
+            "subagent_start",
+            child_session_id=child_session_id,
+            parent_session_id=parent_session_id,
+            agent_name=agent_def.name,
+            task_preview=task[:100],
+        )
 
         # Strip non-serializable objects (like LLM instances) for DB persistence
         db_metadata = {
-            k: v for k, v in child_metadata.items()
+            k: v
+            for k, v in child_metadata.items()
             if isinstance(v, (str, int, float, bool, list, dict, type(None)))
         }
         child_session = AgentSession(
@@ -110,9 +114,14 @@ class SubAgentRunner:
         # Emit subagent.started event
         if on_event:
             try:
-                await on_event(subagent_started(
-                    parent_session_id, child_session_id, agent_def.name, task[:200],
-                ))
+                await on_event(
+                    subagent_started(
+                        parent_session_id,
+                        child_session_id,
+                        agent_def.name,
+                        task[:200],
+                    )
+                )
             except Exception:
                 pass
 
@@ -138,9 +147,7 @@ class SubAgentRunner:
                     error_msg = event.data.get("message", "Unknown error")
 
         except Exception as e:
-            log.error("subagent_error",
-                      child_session_id=child_session_id,
-                      error=str(e)[:500])
+            log.error("subagent_error", child_session_id=child_session_id, error=str(e)[:500])
             error_msg = str(e)
 
         # Robust result capture — 3-tier fallback
@@ -177,12 +184,14 @@ class SubAgentRunner:
                     f"No text output was produced. Check child session {child_session_id} for details."
                 )
 
-        log.info("subagent_complete",
-                 child_session_id=child_session_id,
-                 turns=turn_count,
-                 tokens=total_usage.total_tokens,
-                 output_length=len(final_text),
-                 has_error=bool(error_msg))
+        log.info(
+            "subagent_complete",
+            child_session_id=child_session_id,
+            turns=turn_count,
+            tokens=total_usage.total_tokens,
+            output_length=len(final_text),
+            has_error=bool(error_msg),
+        )
 
         # If we have useful output, treat as success even if there was an error
         # (the error details are appended to the output so the orchestrator can see them)
@@ -194,10 +203,15 @@ class SubAgentRunner:
         status_val = "success" if has_useful_output else ("error" if error_msg else "success")
         if on_event:
             try:
-                await on_event(subagent_completed(
-                    parent_session_id, child_session_id, agent_def.name,
-                    status_val, turn_count,
-                ))
+                await on_event(
+                    subagent_completed(
+                        parent_session_id,
+                        child_session_id,
+                        agent_def.name,
+                        status_val,
+                        turn_count,
+                    )
+                )
             except Exception:
                 pass
 
@@ -205,7 +219,9 @@ class SubAgentRunner:
             child_session_id=child_session_id,
             output=final_text,
             data={"task": task},
-            status=ToolStatus.SUCCESS if has_useful_output else (ToolStatus.ERROR if error_msg else ToolStatus.SUCCESS),
+            status=ToolStatus.SUCCESS
+            if has_useful_output
+            else (ToolStatus.ERROR if error_msg else ToolStatus.SUCCESS),
             error=error_msg if not has_useful_output else None,
             turns_used=turn_count,
             tokens_used=total_usage,
@@ -235,9 +251,9 @@ class SubAgentRunner:
         Returns:
             SubAgentResult with the new response
         """
-        log.info("subagent_followup",
-                 child_session_id=child_session_id,
-                 message_preview=message[:100])
+        log.info(
+            "subagent_followup", child_session_id=child_session_id, message_preview=message[:100]
+        )
 
         final_text = ""
         total_usage = LLMUsage()
@@ -266,8 +282,9 @@ class SubAgentRunner:
                     error_msg = event.data.get("message", "Unknown error")
 
         except Exception as e:
-            log.error("subagent_followup_error",
-                      child_session_id=child_session_id, error=str(e)[:500])
+            log.error(
+                "subagent_followup_error", child_session_id=child_session_id, error=str(e)[:500]
+            )
             error_msg = str(e)
 
         # Same 3-tier fallback as run()
