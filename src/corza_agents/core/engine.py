@@ -215,16 +215,27 @@ class AgentEngine:
     ) -> AsyncIterator[StreamEvent]:
         """Internal: execute the agent loop under session lock."""
         session = await self._ensure_session(session_id, agent_def, metadata)
-        working_memory = WorkingMemory(session_id=session_id, metadata=metadata or {})
+
+        # Merge stored session metadata with runtime metadata.
+        # Session metadata (from DB) serves as the base; runtime metadata
+        # (from caller) takes precedence. This ensures tools always see
+        # session-level config like connection_id even when the engine is
+        # invoked directly (e.g. by SubAgentRunner) rather than through
+        # AgentService.send_message.
+        effective_metadata = dict(session.metadata) if session.metadata else {}
+        if metadata:
+            effective_metadata.update(metadata)
+
+        working_memory = WorkingMemory(session_id=session_id, metadata=effective_metadata)
 
         context = ExecutionContext(
             session_id=session_id,
             agent_id=agent_def.id,
             agent_name=agent_def.name,
             parent_session_id=session.parent_session_id,
-            user_id=session.user_id or (metadata or {}).get("user_id", ""),
-            tenant_id=session.tenant_id or (metadata or {}).get("tenant_id", ""),
-            metadata=metadata or {},
+            user_id=session.user_id or effective_metadata.get("user_id", ""),
+            tenant_id=session.tenant_id or effective_metadata.get("tenant_id", ""),
+            metadata=effective_metadata,
             working_memory=working_memory,
             repository=self._repo,
         )
@@ -463,8 +474,10 @@ class AgentEngine:
                     # Tools return ToolOutput with card_data dict containing
                     # structured results (query, code, results, etc.)
                     _card_data = None
+                    _result_dict = None
                     if isinstance(result.output, dict):
                         _card_data = result.output.get("card_data")
+                        _result_dict = result.output
                     yield tool_result_event(
                         session_id,
                         tc.tool_name,
@@ -474,6 +487,7 @@ class AgentEngine:
                         output_preview,
                         turn,
                         card_data=_card_data,
+                        result=_result_dict,
                     )
 
                 yield turn_completed(session_id, turn, "tool_use")
@@ -568,7 +582,8 @@ class AgentEngine:
 
             # Finalize session — whether we broke out naturally or hit max_turns
             # Always treat as COMPLETED. The agent did useful work either way.
-            final_output = llm_response.content or ""
+            # Prefer task_report (from task_complete) over raw LLM reasoning text
+            final_output = working_memory.get("_task_report") or llm_response.content or ""
             if not final_output:
                 msgs = await self._repo.get_messages(session_id)
                 # Try assistant text first

@@ -410,9 +410,22 @@ class Orchestrator:
 
             child_metadata = {}
             if ctx and ctx.metadata:
-                for key in ("workspace_path", "llm", "model"):
+                for key in (
+                    "workspace_path", "llm", "model",
+                    "connection_id", "table_name", "database",
+                    "data_source", "schema_context",
+                    "dialect", "tables", "schema_hint",
+                ):
                     if key in ctx.metadata:
                         child_metadata[key] = ctx.metadata[key]
+
+            log.info(
+                "child_metadata_built",
+                parent_session=parent_sid[:8] if parent_sid else "?",
+                connection_id=child_metadata.get("connection_id", "MISSING"),
+                keys=list(child_metadata.keys()),
+                parent_metadata_keys=list(ctx.metadata.keys()) if ctx and ctx.metadata else [],
+            )
 
             result: SubAgentResult = await runner.run(
                 task=task,
