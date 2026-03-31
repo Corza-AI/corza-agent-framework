@@ -178,6 +178,8 @@ async def manage_agent(
         "Your discipline mechanism for tracking complex work. "
         "Break problems into tasks, track what's done, in progress, and remaining. "
         "Actions: 'add', 'update', 'complete', 'remove', 'clear', 'list'. "
+        "For 'add': pass a single item via 'item', or multiple items at once via "
+        "'items' (JSON array of strings). Batch add is preferred when building a plan. "
         "The plan is loaded into your prompt every turn so you always know where you stand."
     ),
     tags=["planning", "self-management"],
@@ -185,6 +187,7 @@ async def manage_agent(
 async def manage_plan(
     action: str,
     item: str = "",
+    items: str = "",
     status: str = "",
     item_id: str = "",
     ctx: ExecutionContext = None,
@@ -194,7 +197,8 @@ async def manage_plan(
 
     Args:
         action: One of 'add', 'update', 'complete', 'remove', 'clear', 'list'
-        item: Description of the plan item (for add/update)
+        item: Description of a single plan item (for add/update)
+        items: JSON array of item descriptions for batch add, e.g. '["Step 1", "Step 2"]'
         status: Status: 'pending', 'in_progress', 'done', 'blocked' (for update)
         item_id: ID of existing item (for update/complete/remove). Use '1', '2', etc.
     """
@@ -210,15 +214,35 @@ async def manage_plan(
         return {"status": "success", "plan": plan, "count": len(plan)}
 
     if action == "add":
-        if not item:
-            return {"status": "error", "message": "Provide 'item' description to add."}
-        entry = {"id": str(len(plan) + 1), "item": item, "status": "pending"}
-        plan.append(entry)
+        # Support batch add via 'items' (JSON array) or single add via 'item'
+        descriptions: list[str] = []
+        if items:
+            import json as _json
+            try:
+                parsed = _json.loads(items)
+                if isinstance(parsed, list):
+                    descriptions = [str(i) for i in parsed if i]
+                else:
+                    descriptions = [str(parsed)]
+            except _json.JSONDecodeError:
+                # Treat as single item if not valid JSON
+                descriptions = [items]
+        if item:
+            descriptions.append(item)
+        if not descriptions:
+            return {"status": "error", "message": "Provide 'item' or 'items' to add."}
+
+        added = []
+        for desc in descriptions:
+            entry = {"id": str(len(plan) + 1), "item": desc, "status": "pending"}
+            plan.append(entry)
+            added.append(entry)
         wm.store("_plan", plan)
         return {
             "status": "success",
             "action": "added",
-            "entry": entry,
+            "added": added,
+            "added_count": len(added),
             "total": len(plan),
             "plan": plan,
         }
