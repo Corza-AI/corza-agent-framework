@@ -180,6 +180,7 @@ async def manage_agent(
         "Actions: 'add', 'update', 'complete', 'remove', 'clear', 'list'. "
         "For 'add': pass a single item via 'item', or multiple items at once via "
         "'items' (JSON array of strings). Batch add is preferred when building a plan. "
+        "For 'complete': item_id can be comma-separated to mark multiple done at once (e.g. '1,2,3'). "
         "The plan is loaded into your prompt every turn so you always know where you stand."
     ),
     tags=["planning", "self-management"],
@@ -259,20 +260,34 @@ async def manage_plan(
         return {"status": "success", "action": "updated", "entry": plan[idx], "plan": plan}
 
     if action == "complete":
-        idx = _resolve_index(item_id, plan)
-        if idx is None:
-            return {"status": "error", "message": f"Item '{item_id}' not found."}
-        plan[idx]["status"] = "done"
+        # Support batch complete: item_id can be comma-separated, e.g. "1,2,3"
+        ids = [x.strip() for x in item_id.split(",") if x.strip()] if item_id else []
+        if not ids:
+            return {"status": "error", "message": "Provide 'item_id' (single or comma-separated, e.g. '1,2,3')."}
+        completed = []
+        not_found = []
+        for iid in ids:
+            idx = _resolve_index(iid, plan)
+            if idx is None:
+                not_found.append(iid)
+            else:
+                plan[idx]["status"] = "done"
+                completed.append(plan[idx])
         wm.store("_plan", plan)
         remaining = [p for p in plan if p["status"] != "done"]
-        return {
+        result = {
             "status": "success",
             "action": "completed",
-            "entry": plan[idx],
+            "completed_count": len(completed),
             "remaining": len(remaining),
             "total": len(plan),
             "plan": plan,
         }
+        if len(completed) == 1:
+            result["entry"] = completed[0]
+        if not_found:
+            result["not_found"] = not_found
+        return result
 
     if action == "remove":
         idx = _resolve_index(item_id, plan)
