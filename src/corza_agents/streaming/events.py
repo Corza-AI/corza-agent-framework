@@ -121,6 +121,7 @@ def tool_result_event(
     output_preview: str = "",
     turn: int = 0,
     card_data: dict | None = None,
+    result: dict | None = None,
 ) -> StreamEvent:
     data = {
         "tool_name": tool_name,
@@ -131,6 +132,8 @@ def tool_result_event(
     }
     if card_data:
         data["card_data"] = card_data
+    if result is not None:
+        data["result"] = result
     return StreamEvent(
         type=EventType.TOOL_RESULT,
         session_id=session_id,

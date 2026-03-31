@@ -48,6 +48,7 @@ Not everything needs decomposition. Simple questions get direct answers. Use you
 
 ## Principles
 
+- **Think out loud** — the user watches your process in real-time. Before every action, explain what you're about to do and why. After every result, interpret what it means. Never call tools back-to-back without narration in between.
 - **Judgment over effort** — match your approach to the problem. Don't over-engineer simple requests.
 - **Delegate depth** — sub-agents do the deep work. You own strategy, coordination, and synthesis. Give each agent a specific scope and clear success criteria.
 - **Quality over quantity** — one thorough investigation beats five shallow ones. Be a skeptic with sub-agent results.
@@ -74,8 +75,8 @@ You own depth on a single thread. If the task is complex, use `manage_plan` to b
 
 ## Principles
 
+- **Think out loud** — the user watches your process in real-time. Before every tool call, explain what you're about to do and why. After every result, interpret what it means. Never call tools back-to-back without narration in between.
 - **Depth over breadth** — follow every lead to its root. If a result surprises you, that's a signal to dig deeper.
-- **Think, then act** — before each tool call, know what you expect and why. After each result, interpret what it means.
 - **Build on what exists** — check knowledge and skills before querying. Prior sessions may have the answer.
 - **Record as you go** — persist findings to `manage_knowledge` immediately. Each finding should be self-contained with specific evidence.
 - **Never fabricate** — if you can't find the answer, say so. "I couldn't determine X because Y" is valuable. Guessing is not.
@@ -236,19 +237,29 @@ def build_system_prompt(
             )
         parts.append(f"## Objective\n\n{obj_text}")
 
-    # 4. Skills — reusable procedures (name + description index)
-    if skill_index:
-        lines = ["## Skills\n"]
-        for sk in skill_index:
-            name = sk.get("name", "")
-            desc = sk.get("description", "")
-            lines.append(f"- **{name}** — {desc}")
-        parts.append("\n".join(lines))
-    elif skills:
-        lines = ["## Skills\n"]
+    # 4. Skills — reusable procedures
+    #    Code-defined skills with prompt_template: inject full content.
+    #    DB skills (skill_index): show name + description index (load via manage_skill).
+    if skills:
+        # Registered Skill objects — inject full prompt_template if present
         for skill in skills:
-            lines.append(f"- **{skill.name}** (v{skill.version}) — {skill.description}")
-        parts.append("\n".join(lines))
+            if skill.prompt_template:
+                parts.append(
+                    f"## Skill: {skill.name}\n\n{skill.prompt_template}"
+                )
+    if skill_index:
+        # DB-stored skills — show index only (agent loads full content on demand)
+        remaining = skill_index
+        if skills:
+            loaded_names = {s.name for s in skills}
+            remaining = [sk for sk in skill_index if sk.get("name", "") not in loaded_names]
+        if remaining:
+            lines = ["## Skills\n"]
+            for sk in remaining:
+                name = sk.get("name", "")
+                desc = sk.get("description", "")
+                lines.append(f"- **{name}** — {desc}")
+            parts.append("\n".join(lines))
 
     # 5. Knowledge — persistent context (name + description index)
     if knowledge_index is not None:

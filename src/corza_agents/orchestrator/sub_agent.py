@@ -98,9 +98,22 @@ class SubAgentRunner:
             for k, v in child_metadata.items()
             if isinstance(v, (str, int, float, bool, list, dict, type(None)))
         }
+        # Inherit user_id/tenant_id from parent session for proper isolation
+        parent_user_id = ""
+        parent_tenant_id = ""
+        try:
+            parent_session = await self._engine.repository.get_session(parent_session_id)
+            if parent_session:
+                parent_user_id = parent_session.user_id or ""
+                parent_tenant_id = parent_session.tenant_id or ""
+        except Exception:
+            pass
+
         child_session = AgentSession(
             id=child_session_id,
             agent_id=agent_def.id,
+            user_id=parent_user_id,
+            tenant_id=parent_tenant_id,
             parent_session_id=parent_session_id,
             metadata=db_metadata,
         )
