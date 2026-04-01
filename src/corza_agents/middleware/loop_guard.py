@@ -42,7 +42,7 @@ class LoopGuardConfig:
     max_identical_calls: int = 3
 
     # Tool-only stagnation: N consecutive turns with tools but no text → intervene
-    max_toolonly_turns: int = 8
+    max_toolonly_turns: int = 4
 
     # Management-only: N turns with ONLY these tools (no substantive work)
     max_management_only_turns: int = 5
