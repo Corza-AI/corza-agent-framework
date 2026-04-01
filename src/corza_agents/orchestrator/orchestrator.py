@@ -526,7 +526,8 @@ class Orchestrator:
                 return_exceptions=True,
             )
 
-            # Format results
+            # Format results — cap individual outputs to prevent context overflow
+            max_output_chars = 4000  # Per agent — enough for key findings + chart IDs
             formatted = []
             for i, (t, r) in enumerate(zip(task_list, results)):
                 if isinstance(r, Exception):
@@ -540,6 +541,16 @@ class Orchestrator:
                     )
                 else:
                     r["task"] = t["task"][:200]
+                    # Truncate long outputs but preserve chart tokens
+                    if isinstance(r.get("output"), str) and len(r["output"]) > max_output_chars:
+                        output = r["output"]
+                        # Keep the first chunk + any chart tokens from the rest
+                        import re
+                        chart_tokens = re.findall(r'\{\{chart:[^}]+\}\}', output[max_output_chars:])
+                        r["output"] = output[:max_output_chars] + (
+                            f"\n\n... (truncated — {len(output)} chars total)"
+                            + ("\n\nAdditional charts: " + " ".join(chart_tokens) if chart_tokens else "")
+                        )
                     formatted.append(r)
 
             succeeded = sum(
