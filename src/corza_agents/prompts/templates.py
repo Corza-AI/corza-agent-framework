@@ -245,9 +245,7 @@ def build_system_prompt(
         # Registered Skill objects — inject full prompt_template if present
         for skill in skills:
             if skill.prompt_template:
-                parts.append(
-                    f"## Skill: {skill.name}\n\n{skill.prompt_template}"
-                )
+                parts.append(f"## Skill: {skill.name}\n\n{skill.prompt_template}")
     if skill_index:
         # DB-stored skills — show index only (agent loads full content on demand)
         remaining = skill_index

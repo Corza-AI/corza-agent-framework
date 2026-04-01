@@ -219,6 +219,7 @@ async def manage_plan(
         descriptions: list[str] = []
         if items:
             import json as _json
+
             try:
                 parsed = _json.loads(items)
                 if isinstance(parsed, list):
@@ -263,7 +264,10 @@ async def manage_plan(
         # Support batch complete: item_id can be comma-separated, e.g. "1,2,3"
         ids = [x.strip() for x in item_id.split(",") if x.strip()] if item_id else []
         if not ids:
-            return {"status": "error", "message": "Provide 'item_id' (single or comma-separated, e.g. '1,2,3')."}
+            return {
+                "status": "error",
+                "message": "Provide 'item_id' (single or comma-separated, e.g. '1,2,3').",
+            }
         completed = []
         not_found = []
         for iid in ids:

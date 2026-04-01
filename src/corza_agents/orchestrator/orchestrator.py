@@ -411,10 +411,17 @@ class Orchestrator:
             child_metadata = {}
             if ctx and ctx.metadata:
                 for key in (
-                    "workspace_path", "llm", "model",
-                    "connection_id", "table_name", "database",
-                    "data_source", "schema_context",
-                    "dialect", "tables", "schema_hint",
+                    "workspace_path",
+                    "llm",
+                    "model",
+                    "connection_id",
+                    "table_name",
+                    "database",
+                    "data_source",
+                    "schema_context",
+                    "dialect",
+                    "tables",
+                    "schema_hint",
                 ):
                     if key in ctx.metadata:
                         child_metadata[key] = ctx.metadata[key]
@@ -546,10 +553,15 @@ class Orchestrator:
                         output = r["output"]
                         # Keep the first chunk + any chart tokens from the rest
                         import re
-                        chart_tokens = re.findall(r'\{\{chart:[^}]+\}\}', output[max_output_chars:])
+
+                        chart_tokens = re.findall(r"\{\{chart:[^}]+\}\}", output[max_output_chars:])
                         r["output"] = output[:max_output_chars] + (
                             f"\n\n... (truncated — {len(output)} chars total)"
-                            + ("\n\nAdditional charts: " + " ".join(chart_tokens) if chart_tokens else "")
+                            + (
+                                "\n\nAdditional charts: " + " ".join(chart_tokens)
+                                if chart_tokens
+                                else ""
+                            )
                         )
                     formatted.append(r)
 

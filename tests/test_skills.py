@@ -125,16 +125,14 @@ def test_build_system_prompt_basic():
 
 
 def test_build_system_prompt_with_skills():
-    """Skills are listed as name + description only (lazy-loaded via manage_skill)."""
+    """Skills with prompt_template get their full content injected into the prompt."""
     agent = AgentDefinition(name="test")
     skills = [Skill(name="review", version="1.0", description="Code review procedure",
                      prompt_template="Review the code step by step")]
     prompt = build_system_prompt(agent, skills=skills)
     assert "review" in prompt
-    assert "Code review procedure" in prompt
-    assert "## Skills" in prompt
-    # Full content is NOT injected — agent reads it via manage_skill
-    assert "Review the code step by step" not in prompt
+    # Full content IS injected for skills with prompt_template
+    assert "Review the code step by step" in prompt
 
 
 def test_build_system_prompt_with_knowledge():
