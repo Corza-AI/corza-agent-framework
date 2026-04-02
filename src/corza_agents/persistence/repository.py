@@ -169,13 +169,27 @@ class PostgresRepository(BaseRepository):
 
     async def delete_session(self, session_id: str) -> None:
         async with self.session() as db:
+            # Delete child records first (no CASCADE on FKs)
+            from .models import AgentMessageModel, AgentToolExecutionModel, AgentArtifactModel, AgentRunModel
+            for child_model in [AgentToolExecutionModel, AgentArtifactModel, AgentRunModel, AgentMessageModel]:
+                try:
+                    await db.execute(
+                        child_model.__table__.delete().where(child_model.session_id == session_id)
+                    )
+                except Exception:
+                    pass
+            # Delete child sessions (sub-agents)
+            await db.execute(
+                AgentSessionModel.__table__.delete().where(AgentSessionModel.parent_session_id == session_id)
+            )
+            # Delete the session itself
             result = await db.execute(
                 select(AgentSessionModel).where(AgentSessionModel.id == session_id)
             )
             model = result.scalar_one_or_none()
             if model:
                 await db.delete(model)
-                await db.commit()
+            await db.commit()
 
     # ══════════════════════════════════════════════════════════════════
     # Messages
@@ -245,7 +259,10 @@ class PostgresRepository(BaseRepository):
 
     @staticmethod
     def _sanitize_json(obj: Any) -> Any:
-        """Replace NaN/Infinity with None so PostgreSQL JSON accepts it."""
+        """Sanitize values for PostgreSQL JSON serialization."""
+        from decimal import Decimal
+        if isinstance(obj, Decimal):
+            return float(obj)
         if isinstance(obj, float) and (math.isnan(obj) or math.isinf(obj)):
             return None
         if isinstance(obj, dict):
