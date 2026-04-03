@@ -343,6 +343,35 @@ class Orchestrator:
             }
             return {"status": "success", "agents": available, "count": len(available)}
 
+        def _auto_mark_plan(wm, task_text: str, status: str) -> int | None:
+            """Auto-mark the best-matching pending plan item to the given status.
+
+            Uses word overlap between the task brief and plan item descriptions
+            to find the most relevant match. Only matches pending items.
+            Returns the matched index, or None.
+            """
+            plan = wm.get("_plan") or []
+            if not plan or not task_text:
+                return None
+
+            task_words = set(task_text.lower().split())
+            best_idx, best_score = None, 0
+
+            for i, entry in enumerate(plan):
+                if entry.get("status") not in ("pending", "in_progress"):
+                    continue
+                item_words = set(entry.get("item", "").lower().split())
+                overlap = len(task_words & item_words)
+                if overlap > best_score:
+                    best_score = overlap
+                    best_idx = i
+
+            if best_idx is not None and best_score >= 2:
+                plan[best_idx]["status"] = status
+                wm.store("_plan", plan)
+                return best_idx
+            return None
+
         async def _spawn(agent_name, task, context_data, ctx):
             if not agent_name:
                 return {"status": "error", "message": "Provide 'agent_name' to spawn."}
@@ -362,6 +391,11 @@ class Orchestrator:
                     context_dict = json.loads(context_data)
                 except (json.JSONDecodeError, TypeError):
                     context_dict = {"context": context_data}
+
+            # Auto-mark matching plan item as in_progress
+            _matched_plan_idx = None
+            if ctx and ctx.working_memory:
+                _matched_plan_idx = _auto_mark_plan(ctx.working_memory, task, "in_progress")
 
             parent_sid = ctx.session_id if ctx else ""
 
@@ -446,6 +480,14 @@ class Orchestrator:
             on_complete = ctx.metadata.get("on_subagent_complete") if ctx and ctx.metadata else None
             if on_complete and child_session_id:
                 await on_complete(child_session_id, result.status.value, result.output)
+
+            # Auto-mark matching plan item as done on success
+            if _matched_plan_idx is not None and result.status.value == "success":
+                if ctx and ctx.working_memory:
+                    plan = ctx.working_memory.get("_plan") or []
+                    if _matched_plan_idx < len(plan):
+                        plan[_matched_plan_idx]["status"] = "done"
+                        ctx.working_memory.store("_plan", plan)
 
             log.info(
                 "agent_spawned",
