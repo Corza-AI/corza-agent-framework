@@ -298,6 +298,7 @@ class AgentEngine:
                     agent_def,
                     skills=skills,
                     working_memory_context=working_memory.get_context_for_llm(),
+                    extra_context=agent_def.extra_context,
                     variables=variables or {},
                     registered_tools=self._tools.get_schemas(all_tool_names)
                     if all_tool_names

@@ -295,6 +295,12 @@ class AgentDefinition(BaseModel):
         description="Max sub-agents to run concurrently via spawn_parallel. 1-10.",
     )
     memory_scope: str = "isolated"
+    extra_context: str = Field(
+        default="",
+        description="Application-specific context appended to the system prompt "
+        "(e.g. available data connections, workspace info). "
+        "Placed after Plan, before the user's first message.",
+    )
     metadata: dict[str, Any] = Field(default_factory=dict)
 
     model_config = {"arbitrary_types_allowed": True}
