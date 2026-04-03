@@ -481,13 +481,15 @@ class Orchestrator:
             if on_complete and child_session_id:
                 await on_complete(child_session_id, result.status.value, result.output)
 
-            # Auto-mark matching plan item as done on success
-            if _matched_plan_idx is not None and result.status.value == "success":
-                if ctx and ctx.working_memory:
-                    plan = ctx.working_memory.get("_plan") or []
-                    if _matched_plan_idx < len(plan):
+            # Auto-mark matching plan item based on result
+            if _matched_plan_idx is not None and ctx and ctx.working_memory:
+                plan = ctx.working_memory.get("_plan") or []
+                if _matched_plan_idx < len(plan):
+                    if result.status.value == "success":
                         plan[_matched_plan_idx]["status"] = "done"
-                        ctx.working_memory.store("_plan", plan)
+                    else:
+                        plan[_matched_plan_idx]["status"] = "blocked"
+                    ctx.working_memory.store("_plan", plan)
 
             log.info(
                 "agent_spawned",
