@@ -228,15 +228,15 @@ def build_system_prompt(
     base = agent_def.system_prompt or DEFAULT_SYSTEM_PROMPT
     parts.append(render_template(base, variables))
 
-    # 3. Objective — the agent's current mission (capped to prevent bloat)
+    # 3. Mission — the agent's purpose (capped to prevent bloat)
     obj_text = objective or agent_def.objective
     if obj_text:
         if len(obj_text) > _OBJECTIVE_MAX_CHARS:
             obj_text = (
                 obj_text[:_OBJECTIVE_MAX_CHARS]
-                + "\n\n*(truncated — load full objective via `manage_objective(action='read')`)*"
+                + "\n\n*(truncated — load full mission via `manage_objective(action='read')`)*"
             )
-        parts.append(f"## Objective\n\n{obj_text}")
+        parts.append(f"## Mission\n\n{obj_text}")
 
     # 4. Skills — reusable procedures
     #    Code-defined skills with prompt_template: inject full content.
