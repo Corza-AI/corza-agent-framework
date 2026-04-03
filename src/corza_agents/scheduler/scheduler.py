@@ -53,6 +53,8 @@ class ScheduleEntry(BaseModel):
     id: str = Field(default_factory=_uuid)
     name: str
     agent_id: str
+    tenant_id: str | None = None
+    user_id: str | None = None
     schedule_type: str  # "cron", "once", "event"
     cron_expression: str | None = None
     run_at: datetime | None = None
@@ -71,6 +73,9 @@ class AgentScheduler:
 
     Runs as a background task, polling the af_schedules table for due jobs.
     When a schedule is due, it runs the agent and records the result.
+
+    Supports pre/post execution hooks for application-specific logic
+    (e.g., creating ephemeral tables for incremental data research).
     """
 
     def __init__(
@@ -79,6 +84,8 @@ class AgentScheduler:
         repository: Repository,
         agent_definitions: dict[str, AgentDefinition],
         poll_interval_seconds: int = 30,
+        pre_execute_hook: Any | None = None,
+        post_execute_hook: Any | None = None,
     ):
         self._orchestrator = orchestrator
         self._repo = repository
@@ -86,6 +93,8 @@ class AgentScheduler:
         self._poll_interval = poll_interval_seconds
         self._running = False
         self._task: asyncio.Task | None = None
+        self._pre_execute_hook = pre_execute_hook
+        self._post_execute_hook = post_execute_hook
 
     # ══════════════════════════════════════════════════════════════════
     # Schedule Management
@@ -100,11 +109,15 @@ class AgentScheduler:
         variables: dict | None = None,
         metadata: dict | None = None,
         max_runs: int | None = None,
+        tenant_id: str | None = None,
+        user_id: str | None = None,
     ) -> str:
         """Schedule a recurring cron-based agent run."""
         entry = ScheduleEntry(
             name=name,
             agent_id=agent_id,
+            tenant_id=tenant_id,
+            user_id=user_id,
             schedule_type="cron",
             cron_expression=cron_expression,
             prompt_template=prompt_template,
@@ -123,11 +136,15 @@ class AgentScheduler:
         prompt_template: str,
         variables: dict | None = None,
         metadata: dict | None = None,
+        tenant_id: str | None = None,
+        user_id: str | None = None,
     ) -> str:
         """Schedule a one-time agent run at a specific time."""
         entry = ScheduleEntry(
             name=name,
             agent_id=agent_id,
+            tenant_id=tenant_id,
+            user_id=user_id,
             schedule_type="once",
             run_at=run_at,
             prompt_template=prompt_template,
@@ -195,29 +212,117 @@ class AgentScheduler:
             )
             await db.commit()
 
-    async def list_schedules(self, enabled_only: bool = True) -> list[dict]:
-        """List all schedules."""
+    async def list_schedules(
+        self, enabled_only: bool = True, tenant_id: str | None = None
+    ) -> list[dict]:
+        """List schedules, optionally filtered by tenant."""
         async with self._repo.session() as db:
             query = select(AgentScheduleModel)
             if enabled_only:
                 query = query.where(AgentScheduleModel.enabled == True)  # noqa
+            if tenant_id:
+                query = query.where(AgentScheduleModel.tenant_id == tenant_id)
             result = await db.execute(query.order_by(AgentScheduleModel.created_at))
             return [
                 {
                     "id": s.id,
                     "name": s.name,
                     "agent_id": s.agent_id,
+                    "tenant_id": s.tenant_id,
                     "type": s.schedule_type,
                     "cron": s.cron_expression,
                     "event_type": s.event_type,
+                    "prompt_template": s.prompt_template,
+                    "variables": s.variables or {},
+                    "metadata": s.metadata_ if hasattr(s, "metadata_") else (s.metadata or {}),
                     "enabled": s.enabled,
                     "next_run_at": s.next_run_at.isoformat() if s.next_run_at else None,
                     "last_run_at": s.last_run_at.isoformat() if s.last_run_at else None,
                     "last_run_status": s.last_run_status,
+                    "last_run_session_id": s.last_run_session_id,
                     "run_count": s.run_count,
                 }
                 for s in result.scalars().all()
             ]
+
+    async def get_schedule(self, schedule_id: str) -> dict | None:
+        """Get a single schedule by ID."""
+        async with self._repo.session() as db:
+            result = await db.execute(
+                select(AgentScheduleModel).where(AgentScheduleModel.id == schedule_id)
+            )
+            s = result.scalar_one_or_none()
+            if not s:
+                return None
+            return {
+                "id": s.id,
+                "name": s.name,
+                "agent_id": s.agent_id,
+                "tenant_id": s.tenant_id,
+                "type": s.schedule_type,
+                "cron": s.cron_expression,
+                "event_type": s.event_type,
+                "prompt_template": s.prompt_template,
+                "variables": s.variables or {},
+                "metadata": s.metadata_ if hasattr(s, "metadata_") else (s.metadata or {}),
+                "enabled": s.enabled,
+                "next_run_at": s.next_run_at.isoformat() if s.next_run_at else None,
+                "last_run_at": s.last_run_at.isoformat() if s.last_run_at else None,
+                "last_run_status": s.last_run_status,
+                "last_run_session_id": s.last_run_session_id,
+                "run_count": s.run_count,
+            }
+
+    async def update_schedule(self, schedule_id: str, **kwargs: Any) -> bool:
+        """Update schedule fields. Accepts: name, cron_expression, prompt_template,
+        variables, metadata, enabled, max_runs."""
+        allowed_fields = {
+            "name", "cron_expression", "prompt_template", "variables",
+            "enabled", "max_runs",
+        }
+        values = {k: v for k, v in kwargs.items() if k in allowed_fields and v is not None}
+        if "metadata" in kwargs:
+            values["metadata_"] = kwargs["metadata"]
+
+        if not values:
+            return False
+
+        # Recalculate next_run if cron changed
+        if "cron_expression" in values:
+            values["next_run_at"] = self._next_cron_run(values["cron_expression"])
+
+        values["updated_at"] = _now()
+
+        async with self._repo.session() as db:
+            result = await db.execute(
+                update(AgentScheduleModel)
+                .where(AgentScheduleModel.id == schedule_id)
+                .values(**values)
+            )
+            await db.commit()
+            return result.rowcount > 0  # type: ignore[union-attr]
+
+    async def delete_schedule(self, schedule_id: str) -> bool:
+        """Permanently delete a schedule."""
+        from sqlalchemy import delete as sa_delete
+
+        async with self._repo.session() as db:
+            result = await db.execute(
+                sa_delete(AgentScheduleModel).where(AgentScheduleModel.id == schedule_id)
+            )
+            await db.commit()
+            return result.rowcount > 0  # type: ignore[union-attr]
+
+    async def run_now(self, schedule_id: str) -> str | None:
+        """Manually trigger a schedule immediately. Returns session_id."""
+        async with self._repo.session() as db:
+            result = await db.execute(
+                select(AgentScheduleModel).where(AgentScheduleModel.id == schedule_id)
+            )
+            schedule = result.scalar_one_or_none()
+            if not schedule:
+                return None
+        return await self._execute_and_update(schedule)
 
     # ══════════════════════════════════════════════════════════════════
     # Scheduler Loop
@@ -306,7 +411,13 @@ class AgentScheduler:
         schedule: AgentScheduleModel,
         extra_variables: dict | None = None,
     ) -> str | None:
-        """Execute a scheduled agent run."""
+        """Execute a scheduled agent run.
+
+        Flow:
+        1. Pre-execute hook (e.g., create ephemeral table for incremental research)
+        2. Run the agent with rendered prompt + metadata
+        3. Post-execute hook (e.g., update cursor, cleanup ephemeral table)
+        """
         agent_def = self._agents.get(schedule.agent_id)
         if not agent_def:
             log.error(
@@ -321,17 +432,29 @@ class AgentScheduler:
         variables["_schedule_name"] = schedule.name
         variables["_run_time"] = datetime.now(UTC).isoformat()
 
-        # Render prompt template
-        from corza_agents.prompts.templates import render_template
-
-        prompt = render_template(schedule.prompt_template, variables)
-
-        session_id = _uuid()
         metadata = dict(
             schedule.metadata_ if hasattr(schedule, "metadata_") else (schedule.metadata or {})
         )
         metadata["scheduled"] = True
         metadata["schedule_id"] = schedule.id
+
+        # ── Pre-execute hook ──
+        # Can modify variables and metadata (e.g., create ephemeral table,
+        # inject connection_id, override the target table name).
+        hook_context: dict[str, Any] = {}
+        if self._pre_execute_hook:
+            try:
+                hook_context = await self._pre_execute_hook(schedule, variables, metadata) or {}
+            except Exception as e:
+                log.error("pre_execute_hook_failed", schedule_id=schedule.id, error=str(e)[:500])
+                return None
+
+        # Render prompt template (AFTER pre-hook so variables are updated)
+        from corza_agents.prompts.templates import render_template
+
+        prompt = render_template(schedule.prompt_template, variables)
+
+        session_id = _uuid()
 
         try:
             async for event in self._orchestrator.run(
@@ -350,10 +473,33 @@ class AgentScheduler:
                     )
 
             log.info("scheduled_run_completed", schedule_id=schedule.id, session_id=session_id)
+
+            # ── Post-execute hook ──
+            # Can update cursor values, cleanup ephemeral tables, etc.
+            if self._post_execute_hook:
+                try:
+                    await self._post_execute_hook(
+                        schedule, variables, metadata, hook_context, session_id, "completed"
+                    )
+                except Exception as e:
+                    log.error(
+                        "post_execute_hook_failed", schedule_id=schedule.id, error=str(e)[:500]
+                    )
+
             return session_id
 
         except Exception as e:
             log.error("scheduled_run_failed", schedule_id=schedule.id, error=str(e)[:500])
+
+            # Post-hook on failure too (for cleanup)
+            if self._post_execute_hook:
+                try:
+                    await self._post_execute_hook(
+                        schedule, variables, metadata, hook_context, None, "failed"
+                    )
+                except Exception:
+                    pass
+
             return None
 
     # ══════════════════════════════════════════════════════════════════
@@ -367,6 +513,8 @@ class AgentScheduler:
                 id=entry.id,
                 name=entry.name,
                 agent_id=entry.agent_id,
+                tenant_id=entry.tenant_id,
+                user_id=entry.user_id,
                 schedule_type=entry.schedule_type,
                 cron_expression=entry.cron_expression,
                 run_at=entry.run_at,

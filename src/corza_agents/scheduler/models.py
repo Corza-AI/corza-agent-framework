@@ -26,6 +26,8 @@ class AgentScheduleModel(Base):
     id = Column(String(36), primary_key=True, default=_uuid)
     name = Column(String(255), nullable=False)
     agent_id = Column(String(255), nullable=False, index=True)
+    tenant_id = Column(String(36), nullable=True, index=True)
+    user_id = Column(String(36), nullable=True)
     schedule_type = Column(String(20), nullable=False)  # cron, once, event
     cron_expression = Column(String(100), nullable=True)
     run_at = Column(DateTime(timezone=True), nullable=True)
