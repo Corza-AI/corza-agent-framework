@@ -1,117 +1,363 @@
 # Architecture
 
+This document explains how the Corza Agent Framework is structured internally — the ReAct loop, component responsibilities, data flow, and extension points.
+
+---
+
+## System Overview
+
+```
+┌──────────────────────────────────────────────────────────────────────────┐
+│                           Your Application                              │
+│                                                                          │
+│  ┌─────────────┐    ┌──────────────┐    ┌─────────────────────────────┐ │
+│  │ Auth Layer  │───▶│ FastAPI      │───▶│ AgentService               │ │
+│  │ (yours)     │    │ Router       │    │ (framework-agnostic)       │ │
+│  └─────────────┘    └──────────────┘    └──────────┬──────────────────┘ │
+│                                                     │                    │
+│                            ┌────────────────────────▼─────────────────┐ │
+│                            │          Orchestrator                    │ │
+│                            │  ┌─────────────┐  ┌─────────────────┐  │ │
+│                            │  │ Brain Agent  │  │  Sub-Agents     │  │ │
+│                            │  │ (delegates)  │──│  (specialized)  │  │ │
+│                            │  └──────┬──────┘  └─────────────────┘  │ │
+│                            └─────────┼──────────────────────────────┘ │
+│                                      │                                │
+│  ┌───────────────────────────────────▼──────────────────────────────┐ │
+│  │                      AgentEngine (ReAct Loop)                    │ │
+│  │                                                                   │ │
+│  │  ┌──────────┐   ┌──────────────┐   ┌───────────────────────────┐│ │
+│  │  │ AgentLLM │   │ ToolRegistry │   │ Memory                   ││ │
+│  │  │ 23+      │   │ @tool deco   │   │ Working + Context + Health││ │
+│  │  │ providers│   │ JSON schema  │   │                           ││ │
+│  │  └──────────┘   └──────────────┘   └───────────────────────────┘│ │
+│  └──────────────────────────────────────────────────────────────────┘ │
+│                                                                        │
+│  ┌──────────────────────────────────────────────────────────────────┐ │
+│  │  Middleware Pipeline                                              │ │
+│  │  ContextCompression → RateLimit → Audit → TokenTracking          │ │
+│  │  → Permission → LoopGuard → [Custom]                             │ │
+│  └──────────────────────────────────────────────────────────────────┘ │
+│                                                                        │
+│  ┌──────────────────────────────────────────────────────────────────┐ │
+│  │  Persistence                                                      │ │
+│  │  ┌──────────┐  ┌──────────┐  ┌──────────────┐                   │ │
+│  │  │ In-Memory│  │  SQLite  │  │  PostgreSQL  │                   │ │
+│  │  │ (tests)  │  │  (dev)   │  │ (production) │                   │ │
+│  │  └──────────┘  └──────────┘  └──────────────┘                   │ │
+│  └──────────────────────────────────────────────────────────────────┘ │
+└──────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
 ## The ReAct Loop
 
-The core of the framework is a Reason + Act loop with automatic retry:
+The core of the framework is a **Reason + Act** loop with automatic retry and error recovery:
 
 ```
 User message
-    |
-    v
-+----------+     +---------+     +--------+
-|   LLM    | --> |  Tools  | --> |  LLM   | --> ... --> Final response
-+----------+     +---------+     +--------+
-    ^                                 |
-    |                                 |
-    +---- messages persisted ---------+
+     │
+     ▼
+┌─────────────┐      ┌─────────────┐      ┌─────────────┐
+│  LLM Call   │ ───▶ │  Tool Exec  │ ───▶ │  LLM Call   │ ───▶ ... ───▶ Final Answer
+│  (reason)   │      │  (act)      │      │  (reason)   │
+└─────────────┘      └─────────────┘      └─────────────┘
+      ▲                                          │
+      │          persisted after each turn        │
+      └──────────────────────────────────────────┘
 ```
 
-Each iteration is a **turn**. The agent keeps looping until:
-- The LLM produces a final text response (no more tool calls)
-- `max_turns` is hit
-- An error occurs (after `max_llm_retries` retry attempts)
+**Turn lifecycle:**
 
-## Components
+1. Engine sends conversation history + tool schemas to the LLM
+2. LLM responds with either text (done) or tool calls (continue)
+3. Engine executes each tool call through the ToolRegistry
+4. Tool results are appended to conversation history
+5. Loop repeats from step 1
 
-| Component | What it does |
-|-----------|-------------|
-| `AgentLLM` | Talks to any LLM provider. Handles streaming, tool schemas, message format conversion. |
-| `AgentEngine` | Runs the ReAct loop. Manages sessions, calls LLM with retry, executes tools, emits events. |
-| `ToolRegistry` | Stores tools. Generates JSON schemas. Dispatches execution with timeout and retry. |
-| `BaseRepository` | Abstract persistence interface. Implemented by Memory, SQLite, and PostgreSQL backends. |
-| `Orchestrator` | Wraps `AgentEngine` with sub-agent support. The "brain" pattern. |
-| `SkillsManager` | Loads skills from files, functions, URLs, or databases. Injects into system prompt. |
-| `WorkingMemory` | Per-session scratch space. Tools can store/retrieve data during a run. |
-| `ContextManager` | Keeps the context window under control. Truncates, summarizes, compacts. |
-| `BaseMiddleware` | Hook into the loop at 6 points: before/after LLM, before/after tool, on turn complete, on error. |
-| `AgentService` | Framework-agnostic service layer. Use with any web framework or CLI. |
+**Termination conditions:**
+- LLM produces a final text response (no tool calls)
+- `max_turns` limit reached
+- Unrecoverable error after all retries exhausted
 
-## Persistence Backends
+---
+
+## Component Reference
+
+| Component | Module | Responsibility |
+|-----------|--------|---------------|
+| **AgentLLM** | `core/llm.py` | Unified LLM client for 23+ providers. Handles streaming, tool schema conversion, message format normalization, and provider-specific quirks |
+| **AgentEngine** | `core/engine.py` | Runs the ReAct loop. Manages session lifecycle, calls LLM with retry, executes tools, emits streaming events |
+| **ToolRegistry** | `tools/registry.py` | Central tool store. Auto-generates JSON schemas from Python type hints. Dispatches execution with timeout and retry |
+| **Orchestrator** | `orchestrator/orchestrator.py` | Multi-agent coordinator. Registers sub-agents, provides `manage_agent` tool to the brain, handles parallel dispatch |
+| **SubAgentRunner** | `orchestrator/sub_agent.py` | Isolates sub-agent execution. Each sub-agent gets its own session, tool set, and message history |
+| **SkillsManager** | `skills/manager.py` | Loads skills from files, functions, URLs, or databases. Injects skill prompts into the system message |
+| **WorkingMemory** | `memory/working.py` | Per-session scratch space. Tools store/retrieve data during a run |
+| **ContextManager** | `memory/context.py` | Keeps the context window under control via truncation, compression, and LLM summarization |
+| **BaseMiddleware** | `middleware/base.py` | Hook interface with 6 extension points: before/after LLM, before/after tool, on turn complete, on error |
+| **AgentService** | `api/service.py` | Framework-agnostic service layer. No web framework imports — works with FastAPI, Flask, Django, or CLI |
+| **BaseRepository** | `persistence/base.py` | Abstract persistence interface. Implemented by InMemory, SQLite, and PostgreSQL backends |
+
+---
+
+## Data Flow: Message Lifecycle
+
+```
+1. HTTP Request                    2. AgentService                 3. Orchestrator
+   POST /sessions/{id}/messages ──▶  service.send_message() ───▶  orchestrator.run()
+                                                                        │
+                                                                        ▼
+4. AgentEngine                     5. AgentLLM                    6. Tool Execution
+   engine.run() ─────────────────▶  llm.stream_response() ──▶    tool_registry.execute()
+        │                                  │                           │
+        │    ┌─────────────────────────────┘                           │
+        │    │  StreamEvent(llm.text_delta)                            │
+        │    │  StreamEvent(llm.tool_call)                             │
+        │    ▼                                                         │
+        │  SSE to client ◀──────── StreamEvent(tool.result) ◀─────────┘
+        │
+        ▼
+7. Persistence
+   repository.save_message()
+   repository.save_tool_execution()
+```
+
+---
+
+## Persistence Layer
+
+### Database Schema
+
+All three backends (InMemory, SQLite, PostgreSQL) store the same tables:
+
+```
+┌──────────────────┐     ┌──────────────────┐     ┌────────────────────┐
+│   af_sessions    │     │   af_messages    │     │ af_tool_executions │
+├──────────────────┤     ├──────────────────┤     ├────────────────────┤
+│ id (PK)          │◀───│ session_id (FK)  │     │ session_id (FK)    │
+│ agent_name       │     │ role             │     │ tool_name          │
+│ status           │     │ content          │     │ arguments (JSON)   │
+│ user_id          │     │ tool_calls (JSON)│     │ result (JSON)      │
+│ tenant_id        │     │ created_at       │     │ status             │
+│ parent_session_id│     └──────────────────┘     │ duration_ms        │
+│ token_count      │                               │ created_at         │
+│ metadata (JSON)  │                               └────────────────────┘
+│ created_at       │
+│ updated_at       │     ┌──────────────────┐     ┌──────────────────┐
+└──────────────────┘     │  af_artifacts    │     │  af_audit_log    │
+                          ├──────────────────┤     ├──────────────────┤
+┌──────────────────┐     │ session_id (FK)  │     │ session_id       │
+│   af_memory      │     │ name             │     │ event_type       │
+├──────────────────┤     │ content (JSON)   │     │ data (JSON)      │
+│ session_id       │     │ created_at       │     │ created_at       │
+│ key              │     └──────────────────┘     └──────────────────┘
+│ value (JSON)     │
+│ created_at       │
+└──────────────────┘
+```
+
+### Backend Selection
 
 ```python
 from corza_agents import create_repository
 
-repo = create_repository("memory")     # In-memory (no deps, for prototyping)
-repo = create_repository("sqlite")     # SQLite file (requires aiosqlite)
-repo = create_repository("postgres")   # PostgreSQL (production)
+# Prototyping — zero dependencies, data in-memory
+repo = create_repository("memory")
+
+# Development — persistent file, no server needed
+repo = create_repository("sqlite", db_path="agents.db")
+
+# Production — async PostgreSQL with connection pooling
+repo = create_repository("postgres", db_url="postgresql+asyncpg://user:pass@host/db")
 ```
 
-All backends store: sessions, messages, tool executions, artifacts, audit log, cross-session memory.
+Tables are auto-created on `await repo.initialize()`. Schema version is tracked — warnings are emitted if the database was created by an older version.
 
-**Database tables** (auto-created by all backends):
+---
 
-| Table | Contents |
-|-------|----------|
-| `af_sessions` | Agent sessions with status, token counts, metadata |
-| `af_messages` | Conversation messages (user, assistant, tool results) |
-| `af_tool_executions` | Tool call audit log with inputs, outputs, timing |
-| `af_artifacts` | Named outputs stored by agents |
-| `af_audit_log` | Middleware audit events |
-| `af_memory` | Cross-session long-term memory |
+## Middleware Pipeline
 
-## Error Recovery
-
-The engine retries transient LLM errors automatically:
-
-| Error Type | Behavior |
-|-----------|----------|
-| Rate limit | Wait `retry_after_seconds`, retry |
-| Timeout / connection | Exponential backoff (2^attempt, max 30s), retry up to `max_llm_retries` |
-| Context overflow | Compact context window, retry once |
-| Non-retryable | Session enters `WAITING_INPUT` — next user message resumes |
-
-Configure via `AgentDefinition(max_llm_retries=3)`.
-
-## Multi-Agent
-
-The `Orchestrator` registers sub-agents. The brain agent gets a `manage_agent` tool that delegates work:
+Middleware hooks fire at six points in the ReAct loop:
 
 ```
-Brain Agent
-    |
-    +-- spawn_parallel([                          ← concurrent dispatch
-    |       {"researcher", "find data on X"},
-    |       {"analyst", "check the numbers"},
-    |   ])
-    |       \-- both run in parallel (asyncio.gather)
-    |       \-- returns all SubAgentResults at once
-    |
-    +-- spawn("writer", "summarize these facts")  ← sequential
-    |       \-- writer runs in its own session
-    |       \-- returns SubAgentResult
-    |
-    +-- synthesizes results into final answer
+                    ┌──────────────────┐
+                    │ before_llm_call  │ ◀── modify messages/tools before LLM
+                    └────────┬─────────┘
+                             │
+                    ┌────────▼─────────┐
+                    │    LLM Call      │
+                    └────────┬─────────┘
+                             │
+                    ┌────────▼─────────┐
+                    │ after_llm_call   │ ◀── inspect/modify LLM response
+                    └────────┬─────────┘
+                             │
+                    ┌────────▼─────────┐
+                    │ before_tool_call │ ◀── validate, gate, or modify tool args
+                    └────────┬─────────┘
+                             │
+                    ┌────────▼─────────┐
+                    │  Tool Execution  │
+                    └────────┬─────────┘
+                             │
+                    ┌────────▼─────────┐
+                    │ after_tool_call  │ ◀── post-process tool results
+                    └────────┬─────────┘
+                             │
+                    ┌────────▼─────────┐
+                    │ on_turn_complete │ ◀── end-of-turn analytics
+                    └────────┬─────────┘
+                             │
+                    ┌────────▼─────────┐
+                    │    on_error      │ ◀── error handling and reporting
+                    └──────────────────┘
 ```
 
-Each sub-agent gets its own session, its own tool registry, and its own message history. The parent only sees the final result.
+### Built-in Middleware
 
-**Parallel dispatch**: Up to `max_parallel_agents` (default 5) sub-agents run concurrently via `spawn_parallel`.
+| Middleware | What it does |
+|-----------|-------------|
+| **ContextCompressionMiddleware** | Ages tool results through 4 tiers (fresh → warm → cold → expired), progressively compressing older results to save context space |
+| **RateLimitMiddleware** | Token-bucket rate limiting. Configurable per user, tenant, or session |
+| **AuditMiddleware** | Logs every LLM call and tool execution to `af_audit_log` |
+| **TokenTrackingMiddleware** | Tracks token usage per session. Estimates cost based on provider pricing |
+| **PermissionMiddleware** | Tool-level access control. Uses glob patterns to allow/deny tools per user/role |
+| **LoopGuardMiddleware** | Detects infinite loops (same tool called repeatedly with similar args) and forces the agent to stop |
 
-**Nuclear stop**: `orchestrator.cancel(session_id)` cancels the parent AND all child sessions. Running loops detect cancellation at the top of each turn and exit immediately.
+---
 
-**Sub-agent restrictions**: Task agents can only call `manage_agent(action="report")`. They cannot spawn, message, or list other agents.
+## Multi-Agent Architecture
 
-## API Layer
-
-The framework separates business logic from HTTP:
+### The Brain Pattern
 
 ```
-AgentService (framework-agnostic)     <-- Use from anywhere
-    |
-    +-- FastAPI Router (thin adapter)  <-- Optional HTTP layer
-    +-- CLI adapter                    <-- You can write this
-    +-- Flask adapter                  <-- You can write this
+                              Orchestrator
+                                  │
+                        ┌─────────▼──────────┐
+                        │    Brain Agent     │
+                        │  (has manage_agent │
+                        │   tool)            │
+                        └────────┬───────────┘
+                                 │
+                 ┌───────────────┼───────────────┐
+                 │               │               │
+      ┌──────────▼──┐  ┌───────▼───────┐  ┌───▼──────────┐
+      │  Sub-Agent  │  │  Sub-Agent    │  │  Sub-Agent   │
+      │  "researcher"│  │  "analyst"   │  │  "writer"    │
+      │  own session │  │  own session │  │  own session │
+      │  own tools   │  │  own tools   │  │  own tools   │
+      └─────────────┘  └──────────────┘  └──────────────┘
 ```
+
+**Key design decisions:**
+
+1. **Session isolation** — each sub-agent gets its own session with its own message history. The parent only sees the final result
+2. **Tool isolation** — sub-agents only have access to tools declared in their `AgentDefinition`, not the brain's tools
+3. **Parallel dispatch** — `spawn_parallel` runs up to `max_parallel_agents` (default: 5) sub-agents concurrently via `asyncio.gather`
+4. **Restricted actions** — sub-agents can only call `manage_agent(action="report")`. They cannot spawn other agents
+5. **Nuclear stop** — `orchestrator.cancel(session_id)` cascades to all child sessions
+
+### Session Hierarchy
+
+```
+Session: brain-001 (status: RUNNING)
+├── Session: researcher-001 (parent: brain-001, status: COMPLETED)
+├── Session: analyst-001 (parent: brain-001, status: RUNNING)
+└── Session: writer-001 (parent: brain-001, status: PENDING)
+```
+
+---
+
+## Context Health Monitor
+
+The framework tracks context window usage and takes progressive action:
+
+```
+Context usage:  0%──────40%──────80%──85%──90%──100%
+                         │        │    │    │
+                         │        │    │    └── Hard stop (final turn forced)
+                         │        │    └─── Warn agent to wrap up
+                         │        └──── LLM summarization of old messages
+                         └───── Start compressing tool results
+```
+
+Configure thresholds per agent:
+
+```python
+from corza_agents import ContextHealthConfig
+
+config = ContextHealthConfig(
+    max_tokens=128_000,
+    compress_threshold=0.40,
+    compact_threshold=0.80,
+    warn_threshold=0.85,
+    stop_threshold=0.90,
+)
+```
+
+---
+
+## Error Recovery Strategy
+
+```
+                         Error occurs
+                              │
+                    ┌─────────▼──────────┐
+                    │ Is it retryable?   │
+                    └──┬──────────────┬──┘
+                       │              │
+                    Yes│              │No
+                       │              │
+              ┌────────▼───────┐  ┌──▼────────────────┐
+              │ Rate limit?    │  │ Session →          │
+              │ Wait + retry   │  │ WAITING_INPUT      │
+              │                │  │ Resume on next msg │
+              │ Timeout?       │  └───────────────────┘
+              │ Backoff + retry│
+              │                │
+              │ Context full?  │
+              │ Compact + retry│
+              │                │
+              │ Provider down? │
+              │ Try fallback   │
+              └────────────────┘
+```
+
+---
+
+## Streaming Event Flow
+
+```
+session.started ──▶ turn.started ──▶ llm.text_delta (×N)
+                                  ──▶ llm.tool_call
+                                  ──▶ tool.executing
+                                  ──▶ tool.result
+                                  ──▶ turn.completed
+                    ──▶ turn.started ──▶ ...  (loop continues)
+                    ──▶ session.completed
+
+For multi-agent:
+   ──▶ subagent.started ──▶ [sub-agent events] ──▶ subagent.completed
+```
+
+All events are SSE-formatted with `data:` prefix, newline separation, and automatic heartbeat during long operations.
+
+---
+
+## API Layer Separation
+
+The framework cleanly separates business logic from HTTP:
+
+```
+AgentService (framework-agnostic)     ◀── Use from anywhere
+    │
+    ├── FastAPI Router (included)     ◀── Thin HTTP adapter
+    ├── CLI adapter                   ◀── You can build this
+    └── Any web framework             ◀── You can build this
+```
+
+`AgentService` has zero web framework imports. It only depends on the `Orchestrator` and agent definitions:
 
 ```python
 from corza_agents.api.service import AgentService
@@ -122,50 +368,28 @@ async for event in service.send_message(session.id, "Hello"):
     print(event)
 ```
 
-## Streaming Events
+---
 
-Every action in the loop emits a `StreamEvent`:
+## Provider Architecture
 
-| Event | When |
-|-------|------|
-| `session.started` | Run begins |
-| `turn.started` | New turn begins |
-| `llm.text_delta` | LLM streams a text chunk |
-| `llm.tool_call` | LLM requests a tool call |
-| `tool.executing` | Tool execution begins |
-| `tool.result` | Tool returns a result |
-| `subagent.started` | Sub-agent spawned |
-| `subagent.completed` | Sub-agent finished |
-| `turn.completed` | Turn ends |
-| `session.completed` | Run ends |
-| `error` | Something went wrong |
-
-Access event data via `event.data` dict. Event type via `event.type.value` string.
-
-## Provider Model Strings
-
-The format is `provider:model_name`. 23+ providers supported out of the box:
+The `AgentLLM` class normalizes all provider differences behind a single interface:
 
 ```
-openai:gpt-5.4                   # OpenAI
-anthropic:claude-sonnet-4-6       # Anthropic
-google:gemini-3.1-pro             # Google Gemini
-groq:llama-3.3-70b-versatile     # Groq (fast inference)
-deepseek:deepseek-chat            # DeepSeek
-mistral:mistral-large-latest      # Mistral
-cerebras:llama-3.3-70b           # Cerebras
-fireworks:llama-v3p3-70b-instruct # Fireworks
-together:meta-llama/Meta-Llama-3.1-70B  # Together
-xai:grok-3                        # xAI Grok
-cohere:command-r-plus             # Cohere
-perplexity:sonar-pro              # Perplexity
-ollama:qwen3:8b                   # Ollama (local)
-lmstudio:qwen3-8b                 # LM Studio (local)
-vllm:meta-llama/Llama-3.1-8B     # vLLM (self-hosted)
+                AgentLLM
+                   │
+    ┌──────────────┼───────────────┐
+    │              │               │
+    ▼              ▼               ▼
+ OpenAI-      Anthropic       Google
+ compatible   Messages API    Gemini API
+    │
+    ├── openai, groq, cerebras, deepseek,
+    │   mistral, xai, fireworks, together,
+    │   perplexity, cohere, ollama, lmstudio,
+    │   vllm, jan, llamacpp, localai,
+    │   lemonade, jellybox, docker
+    │
+    └── Any custom endpoint via custom_providers
 ```
 
-Any OpenAI-compatible API works. Register custom endpoints:
-
-```python
-llm = AgentLLM(custom_providers={"myhost": "https://my-llm.internal/v1"})
-```
+Each provider requires its own message format conversion, tool schema translation, and streaming protocol handling. `AgentLLM` handles all of this internally.
