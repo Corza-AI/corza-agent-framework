@@ -4,12 +4,12 @@ from corza_agents.core.types import AgentDefinition, ToolSchema
 from corza_agents.prompts.templates import _format_plan, build_system_prompt, _OBJECTIVE_MAX_CHARS
 
 # ══════════════════════════════════════════════════════════════════════
-# Section ordering: Identity → Principles → Objective → Skills →
+# Section ordering: Identity → Principles → Mission → Skills →
 #                   Knowledge → Tools → Notes → Plan
 # ══════════════════════════════════════════════════════════════════════
 
 def test_build_system_prompt_section_ordering():
-    """Sections must appear in order: Objective, Skills, Knowledge, Tools, Notes, Plan, Extra."""
+    """Sections must appear in order: Mission, Skills, Knowledge, Tools, Notes, Plan, Extra."""
     agent_def = AgentDefinition(
         name="test-agent",
         system_prompt="You are a test agent.",
@@ -26,7 +26,7 @@ def test_build_system_prompt_section_ordering():
         extra_context="extra",
     )
 
-    idx_objective = prompt.index("## Objective")
+    idx_mission = prompt.index("## Mission")
     idx_skills = prompt.index("## Skills")
     idx_knowledge = prompt.index("## Knowledge")
     idx_tools = prompt.index("## Tools")
@@ -34,7 +34,7 @@ def test_build_system_prompt_section_ordering():
     idx_plan = prompt.index("## Plan")
     idx_extra = prompt.index("## Additional Context")
 
-    assert idx_objective < idx_skills, "Objective must come before Skills"
+    assert idx_mission < idx_skills, "Mission must come before Skills"
     assert idx_skills < idx_knowledge, "Skills must come before Knowledge"
     assert idx_knowledge < idx_tools, "Knowledge must come before Tools"
     assert idx_tools < idx_notes, "Tools must come before Notes"
