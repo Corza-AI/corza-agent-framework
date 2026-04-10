@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/Corza-AI/corza-agent-framework/main/docs/assets/logo-banner.svg" alt="Corza Agent Framework" width="600" />
+  <img src="https://raw.githubusercontent.com/Corza-AI/corza-agent-framework/main/docs/assets/corza-logo.png" alt="Corza AI" width="280" />
 </p>
 
-<h1 align="center">Corza Agent Framework</h1>
+<h2 align="center">Agent Framework</h2>
 
 <p align="center">
   <strong>The agent framework built for web applications.</strong>
