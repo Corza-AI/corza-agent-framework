@@ -84,6 +84,11 @@ class SubAgentRunner:
 
         user_message = self._build_task_message(task, context_data)
 
+        # Auto-inject schema context from parent metadata if available
+        schema_hint = child_metadata.get("schema_hint", "")
+        if schema_hint and schema_hint not in user_message:
+            user_message += f"\n\n## Available Schema\n\n{schema_hint}"
+
         log.info(
             "subagent_start",
             child_session_id=child_session_id,
@@ -138,7 +143,17 @@ class SubAgentRunner:
             except Exception:
                 pass
 
-        try:
+        import asyncio
+        from corza_agents.core.types import AgentMessage, MessageRole
+
+        # Nudge after 3 min, hard cancel after 10 min
+        NUDGE_AFTER = getattr(agent_def, "nudge_after_seconds", 180)
+        HARD_DEADLINE = getattr(agent_def, "hard_deadline_seconds", 600)
+
+        completed = asyncio.Event()
+
+        async def _run_child():
+            nonlocal final_text, total_usage, turn_count, error_msg
             async for event in self._engine.run(
                 session_id=child_session_id,
                 user_message=user_message,
@@ -158,10 +173,56 @@ class SubAgentRunner:
                     turn_count = event.data.get("total_turns", 0)
                 elif event.type.value == "error":
                     error_msg = event.data.get("message", "Unknown error")
+            completed.set()
 
+        async def _nudge_timer():
+            """Inject a wrap-up message if the child hasn't completed after NUDGE_AFTER."""
+            try:
+                await asyncio.wait_for(asyncio.shield(completed.wait()), timeout=NUDGE_AFTER)
+            except asyncio.TimeoutError:
+                if not completed.is_set():
+                    log.warning(
+                        "subagent_nudge",
+                        child_session_id=child_session_id,
+                        nudge_after=NUDGE_AFTER,
+                    )
+                    nudge = AgentMessage(
+                        session_id=child_session_id,
+                        role=MessageRole.SYSTEM,
+                        content=(
+                            f"You have been running for {NUDGE_AFTER // 60} minutes. "
+                            "Stop what you are doing. Write your report NOW with whatever "
+                            "findings you have so far, then call session_complete immediately."
+                        ),
+                    )
+                    try:
+                        await self._engine.repository.add_message(nudge)
+                    except Exception as e:
+                        log.warning("nudge_inject_failed", error=str(e))
+
+        child_task = asyncio.ensure_future(_run_child())
+        nudge_task = asyncio.ensure_future(_nudge_timer())
+
+        try:
+            await asyncio.wait_for(asyncio.shield(child_task), timeout=HARD_DEADLINE)
+        except asyncio.TimeoutError:
+            log.warning(
+                "subagent_hard_deadline",
+                child_session_id=child_session_id,
+                hard_deadline=HARD_DEADLINE,
+            )
+            await self._engine.cancel(child_session_id)
+            # Give the child a moment to finish its current turn after cancel
+            try:
+                await asyncio.wait_for(child_task, timeout=30)
+            except (asyncio.TimeoutError, asyncio.CancelledError):
+                pass
+            error_msg = f"Task exceeded {HARD_DEADLINE}s — partial results captured"
         except Exception as e:
             log.error("subagent_error", child_session_id=child_session_id, error=str(e)[:500])
             error_msg = str(e)
+        finally:
+            nudge_task.cancel()
 
         # Robust result capture — 3-tier fallback
         if not final_text:

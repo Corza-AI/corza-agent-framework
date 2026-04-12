@@ -299,6 +299,7 @@ class Orchestrator:
             session_id: str = "",
             context_data: str = "",
             content: str = "",
+            plan_item_id: str = "",
             ctx: ExecutionContext = None,
         ) -> dict:
             # Task agents (sub-agents) can ONLY report back — they cannot
@@ -321,7 +322,7 @@ class Orchestrator:
             if action == "list":
                 return await _list_agents(ctx)
             elif action == "spawn":
-                return await _spawn(agent_name, task, context_data, ctx)
+                return await _spawn(agent_name, task, context_data, ctx, plan_item_id)
             elif action == "spawn_parallel":
                 return await _spawn_parallel(tasks, ctx)
             elif action == "message":
@@ -343,36 +344,7 @@ class Orchestrator:
             }
             return {"status": "success", "agents": available, "count": len(available)}
 
-        def _auto_mark_plan(wm, task_text: str, status: str) -> int | None:
-            """Auto-mark the best-matching pending plan item to the given status.
-
-            Uses word overlap between the task brief and plan item descriptions
-            to find the most relevant match. Only matches pending items.
-            Returns the matched index, or None.
-            """
-            plan = wm.get("_plan") or []
-            if not plan or not task_text:
-                return None
-
-            task_words = set(task_text.lower().split())
-            best_idx, best_score = None, 0
-
-            for i, entry in enumerate(plan):
-                if entry.get("status") not in ("pending", "in_progress"):
-                    continue
-                item_words = set(entry.get("item", "").lower().split())
-                overlap = len(task_words & item_words)
-                if overlap > best_score:
-                    best_score = overlap
-                    best_idx = i
-
-            if best_idx is not None and best_score >= 2:
-                plan[best_idx]["status"] = status
-                wm.store("_plan", plan)
-                return best_idx
-            return None
-
-        async def _spawn(agent_name, task, context_data, ctx):
+        async def _spawn(agent_name, task, context_data, ctx, plan_item_id=""):
             if not agent_name:
                 return {"status": "error", "message": "Provide 'agent_name' to spawn."}
             if not task:
@@ -391,11 +363,6 @@ class Orchestrator:
                     context_dict = json.loads(context_data)
                 except (json.JSONDecodeError, TypeError):
                     context_dict = {"context": context_data}
-
-            # Auto-mark matching plan item as in_progress
-            _matched_plan_idx = None
-            if ctx and ctx.working_memory:
-                _matched_plan_idx = _auto_mark_plan(ctx.working_memory, task, "in_progress")
 
             parent_sid = ctx.session_id if ctx else ""
 
@@ -468,6 +435,15 @@ class Orchestrator:
                 parent_metadata_keys=list(ctx.metadata.keys()) if ctx and ctx.metadata else [],
             )
 
+            # Auto-mark plan item in_progress before spawn
+            if plan_item_id and ctx and ctx.working_memory:
+                plan = ctx.working_memory.get("_plan") or []
+                for item in plan:
+                    if item.get("id") == plan_item_id:
+                        item["status"] = "in_progress"
+                        break
+                ctx.working_memory.store("_plan", plan)
+
             result: SubAgentResult = await runner.run(
                 task=task,
                 agent_def=agent_def,
@@ -481,15 +457,15 @@ class Orchestrator:
             if on_complete and child_session_id:
                 await on_complete(child_session_id, result.status.value, result.output)
 
-            # Auto-mark matching plan item based on result
-            if _matched_plan_idx is not None and ctx and ctx.working_memory:
+            # Auto-mark plan item done/blocked based on result
+            if plan_item_id and ctx and ctx.working_memory:
                 plan = ctx.working_memory.get("_plan") or []
-                if _matched_plan_idx < len(plan):
-                    if result.status.value == "success":
-                        plan[_matched_plan_idx]["status"] = "done"
-                    else:
-                        plan[_matched_plan_idx]["status"] = "blocked"
-                    ctx.working_memory.store("_plan", plan)
+                new_status = "done" if result.status.value == "success" else "blocked"
+                for item in plan:
+                    if item.get("id") == plan_item_id:
+                        item["status"] = new_status
+                        break
+                ctx.working_memory.store("_plan", plan)
 
             log.info(
                 "agent_spawned",
@@ -577,7 +553,8 @@ class Orchestrator:
                 return_exceptions=True,
             )
 
-            # Format results — no truncation, full output preserved
+            # Format results — cap individual outputs to prevent context overflow
+            max_output_chars = 4000  # Per agent — enough for key findings + chart IDs
             formatted = []
             for i, (t, r) in enumerate(zip(task_list, results)):
                 if isinstance(r, Exception):
@@ -591,6 +568,21 @@ class Orchestrator:
                     )
                 else:
                     r["task"] = t["task"][:200]
+                    # Truncate long outputs but preserve chart tokens
+                    if isinstance(r.get("output"), str) and len(r["output"]) > max_output_chars:
+                        output = r["output"]
+                        # Keep the first chunk + any chart tokens from the rest
+                        import re
+
+                        chart_tokens = re.findall(r"\{\{chart:[^}]+\}\}", output[max_output_chars:])
+                        r["output"] = output[:max_output_chars] + (
+                            f"\n\n... (truncated — {len(output)} chars total)"
+                            + (
+                                "\n\nAdditional charts: " + " ".join(chart_tokens)
+                                if chart_tokens
+                                else ""
+                            )
+                        )
                     formatted.append(r)
 
             succeeded = sum(

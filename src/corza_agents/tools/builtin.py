@@ -682,7 +682,23 @@ async def session_complete(
     """
     Signal session completion. Sets _session_complete flag in working memory.
     The engine checks this flag after each turn and stops the loop.
+
+    For sub-agents (investigators): requires a summary of at least 50 chars.
+    The orchestrator reads this to synthesize findings — without it, the work is lost.
     """
+    # Sub-agents must report back with a meaningful summary
+    if ctx and ctx.parent_session_id:
+        if not summary or len(summary.strip()) < 50:
+            return {
+                "status": "blocked",
+                "message": (
+                    "Cannot complete: provide a summary of your findings (at least 50 chars). "
+                    "Write your report as a text message first, then call session_complete "
+                    "with a summary of your key findings. The orchestrator needs this to "
+                    "synthesize the final report."
+                ),
+            }
+
     if ctx and ctx.working_memory:
         ctx.working_memory.store("_session_complete", True)
         if summary:
@@ -735,5 +751,4 @@ BUILTIN_TOOLS = [
     manage_skill,
     manage_context,
     session_complete,
-    task_complete,
 ]

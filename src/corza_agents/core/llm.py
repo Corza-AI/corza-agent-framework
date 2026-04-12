@@ -532,6 +532,14 @@ class AgentLLM:
             kwargs["tools"] = api_tools
             kwargs["tool_choice"] = "auto"
 
+        # Reasoning support (Together AI — Qwen, DeepSeek, etc.)
+        model_lower = model_name.lower()
+        if provider == "together" and ("qwen" in model_lower or "deepseek" in model_lower):
+            kwargs["extra_body"] = {
+                "reasoning": {"enabled": True},
+                "reasoning_effort": "low",
+            }
+
         try:
             log.debug(
                 "llm_stream_request",
@@ -559,6 +567,12 @@ class AgentLLM:
                     continue
 
                 delta = choice.delta
+
+                # Thinking/reasoning tokens (Together, DeepSeek, Qwen, etc.)
+                reasoning = getattr(delta, "reasoning_content", None) or getattr(delta, "reasoning", None)
+                if reasoning:
+                    yield LLMStreamChunk(type="thinking_delta", text=reasoning)
+
                 if delta and delta.content:
                     has_content = True
                     yield LLMStreamChunk(type="text_delta", text=delta.content)
