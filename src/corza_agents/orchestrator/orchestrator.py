@@ -454,8 +454,9 @@ class Orchestrator:
             )
 
             on_complete = ctx.metadata.get("on_subagent_complete") if ctx and ctx.metadata else None
-            if on_complete and child_session_id:
-                await on_complete(child_session_id, result.status.value, result.output)
+            completed_child_id = child_session_id or result.child_session_id
+            if on_complete and completed_child_id:
+                await on_complete(completed_child_id, result.status.value, result.output)
 
             # Auto-mark plan item done/blocked based on result
             if plan_item_id and ctx and ctx.working_memory:
