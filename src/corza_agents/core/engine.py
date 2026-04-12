@@ -298,7 +298,6 @@ class AgentEngine:
                     agent_def,
                     skills=skills,
                     working_memory_context=working_memory.get_context_for_llm(),
-                    extra_context=agent_def.extra_context,
                     variables=variables or {},
                     registered_tools=self._tools.get_schemas(all_tool_names)
                     if all_tool_names
@@ -395,15 +394,25 @@ class AgentEngine:
                 for mw in self._middleware:
                     llm_response = await mw.after_llm_call(llm_response, context)
 
-                # Persist assistant message
+                # Persist assistant message — include thinking as content blocks if present
+                if thinking_text and llm_response.content:
+                    persist_content: str | list = [
+                        {"type": "thinking", "thinking": thinking_text},
+                        {"type": "text", "text": llm_response.content},
+                    ]
+                else:
+                    persist_content = llm_response.content
+
                 assistant_msg = AgentMessage(
                     session_id=session_id,
                     role=MessageRole.ASSISTANT,
-                    content=llm_response.content,
+                    content=persist_content,
                     tool_calls=llm_response.tool_calls if llm_response.tool_calls else None,
                     token_count=usage.output_tokens,
                     model=agent_def.model,
                 )
+                # Reset thinking for next turn
+                thinking_text = ""
                 await self._repo.add_message(assistant_msg)
 
                 # No tool calls → agent is done (natural stop)
@@ -744,12 +753,13 @@ class AgentEngine:
 
                 # Collect streamed response with timeout
                 full_text = ""
+                thinking_text = ""
                 tool_calls: list[ToolCall] = []
                 usage = LLMUsage()
                 stop_reason = StopReason.END_TURN
 
                 async def _collect_stream():
-                    nonlocal full_text, usage, stop_reason
+                    nonlocal full_text, thinking_text, usage, stop_reason
                     async for chunk in response:
                         if chunk.type == "text_delta" and chunk.text:
                             full_text += chunk.text
@@ -757,6 +767,7 @@ class AgentEngine:
                             if on_stream_event:
                                 await on_stream_event(text_delta(session_id, chunk.text, turn))
                         elif chunk.type == "thinking_delta" and chunk.text:
+                            thinking_text += chunk.text
                             # Emit real-time thinking streaming event
                             if on_stream_event:
                                 await on_stream_event(thinking_delta(session_id, chunk.text, turn))
