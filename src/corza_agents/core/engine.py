@@ -262,6 +262,7 @@ class AgentEngine:
         turn = 0
         total_usage = LLMUsage()
         llm_response = LLMResponse()
+        thinking_text = ""
 
         try:
             while turn < agent_def.max_turns:
