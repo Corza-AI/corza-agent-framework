@@ -215,20 +215,23 @@ async def manage_plan(
         return {"status": "success", "plan": plan, "count": len(plan)}
 
     if action == "add":
-        # Support batch add via 'items' (JSON array) or single add via 'item'
+        # Support batch add via 'items' (JSON array or JSON string) or single add via 'item'
         descriptions: list[str] = []
         if items:
-            import json as _json
-
-            try:
-                parsed = _json.loads(items)
-                if isinstance(parsed, list):
-                    descriptions = [str(i) for i in parsed if i]
-                else:
-                    descriptions = [str(parsed)]
-            except _json.JSONDecodeError:
-                # Treat as single item if not valid JSON
-                descriptions = [items]
+            # Handle both native list (from LLM) and JSON string
+            if isinstance(items, list):
+                descriptions = [str(i) for i in items if i]
+            else:
+                import json as _json
+                try:
+                    parsed = _json.loads(items)
+                    if isinstance(parsed, list):
+                        descriptions = [str(i) for i in parsed if i]
+                    else:
+                        descriptions = [str(parsed)]
+                except (_json.JSONDecodeError, TypeError):
+                    # Treat as single item if not valid JSON
+                    descriptions = [str(items)]
         if item:
             descriptions.append(item)
         if not descriptions:
