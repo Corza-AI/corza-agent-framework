@@ -706,6 +706,10 @@ async def session_complete(
         ctx.working_memory.store("_session_complete", True)
         if summary:
             ctx.working_memory.store("_session_summary", summary)
+            # Also store as _task_report so the engine includes it in final_output
+            # (engine prefers _task_report over raw LLM text for sub-agent results)
+            if ctx.parent_session_id:
+                ctx.working_memory.store("_task_report", summary)
     return {
         "status": "complete",
         "message": "Session marked complete. Engine will stop after this turn.",

@@ -593,17 +593,23 @@ class AgentEngine:
 
             # Finalize session — whether we broke out naturally or hit max_turns
             # Always treat as COMPLETED. The agent did useful work either way.
-            # Prefer task_report (from task_complete) over raw LLM reasoning text
-            final_output = working_memory.get("_task_report") or llm_response.content or ""
+            # For sub-agents: find the longest assistant message (the report),
+            # fall back to task_report summary, then last LLM response.
+            final_output = ""
+            task_report = working_memory.get("_task_report") or ""
+            msgs = await self._repo.get_messages(session_id)
+
+            # Find longest assistant text — that's the report
+            for m in reversed(msgs):
+                if m.role == MessageRole.ASSISTANT and m.content:
+                    text = m.text() if isinstance(m.content, list) else m.content
+                    if text and text.strip() and len(text.strip()) > len(final_output):
+                        final_output = text.strip()
+
+            # Fall back to task_report summary or last LLM response
             if not final_output:
-                msgs = await self._repo.get_messages(session_id)
-                # Try assistant text first
-                for m in reversed(msgs):
-                    if m.role == MessageRole.ASSISTANT and m.content:
-                        text = m.text() if isinstance(m.content, list) else m.content
-                        if text and text.strip():
-                            final_output = text
-                            break
+                final_output = task_report or llm_response.content or ""
+            if not final_output:
                 # Fall back to tool results
                 if not final_output:
                     tool_outputs = []
