@@ -706,10 +706,27 @@ async def session_complete(
         ctx.working_memory.store("_session_complete", True)
         if summary:
             ctx.working_memory.store("_session_summary", summary)
-            # Also store as _task_report so the engine includes it in final_output
-            # (engine prefers _task_report over raw LLM text for sub-agent results)
-            if ctx.parent_session_id:
-                ctx.working_memory.store("_task_report", summary)
+
+        # For sub-agents: grab the full report from message history.
+        # The investigator writes the report as text BEFORE calling session_complete.
+        # We store it as _task_report so the engine returns it as final_output.
+        if ctx.parent_session_id and ctx.repository:
+            try:
+                msgs = await ctx.repository.get_messages(ctx.session_id)
+                # Find the last substantial assistant text — that's the report
+                for m in reversed(msgs):
+                    if m.role.value == "assistant" and m.content:
+                        text = m.text() if isinstance(m.content, list) else m.content
+                        if text and len(text.strip()) > 100:
+                            ctx.working_memory.store("_task_report", text.strip())
+                            break
+                else:
+                    if summary:
+                        ctx.working_memory.store("_task_report", summary)
+            except Exception:
+                if summary:
+                    ctx.working_memory.store("_task_report", summary)
+
     return {
         "status": "complete",
         "message": "Session marked complete. Engine will stop after this turn.",
