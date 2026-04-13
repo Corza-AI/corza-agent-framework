@@ -479,17 +479,12 @@ class Orchestrator:
                 turns=result.turns_used,
             )
 
-            spawn_result = {
+            return {
                 "status": result.status.value,
-                "output": result.output or f"Sub-agent '{agent_name}' produced no output.",
+                "report": result.output or "",
                 "report_id": report_id,
-                "session_id": result.child_session_id,
-                "agent_name": agent_name,
-                "turns_used": result.turns_used,
-                "tokens_used": result.tokens_used.total_tokens,
                 "error": result.error,
             }
-            return spawn_result
 
         async def _spawn_parallel(tasks_json, ctx):
             """Spawn multiple sub-agents concurrently and return all results."""

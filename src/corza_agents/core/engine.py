@@ -594,22 +594,19 @@ class AgentEngine:
             # Finalize session — whether we broke out naturally or hit max_turns
             # Always treat as COMPLETED. The agent did useful work either way.
             #
-            # For report content: collect ALL assistant text from the session
-            # (the full report is built across multiple turns as the agent narrates).
-            # This gives the orchestrator the complete investigation output.
-            msgs = await self._repo.get_messages(session_id)
-            all_assistant_text = []
-            for m in msgs:
-                if m.role == MessageRole.ASSISTANT and m.content:
-                    text = m.text() if isinstance(m.content, list) else m.content
-                    if text and text.strip():
-                        all_assistant_text.append(text.strip())
-
-            final_output = "\n\n".join(all_assistant_text) if all_assistant_text else ""
-
-            # Fall back to task_report summary or last LLM response
+            # The report is the LAST substantial assistant text message — the agent
+            # writes intermediate narration throughout, but the report is always last.
+            final_output = working_memory.get("_task_report") or ""
             if not final_output:
-                final_output = working_memory.get("_task_report") or llm_response.content or ""
+                msgs = await self._repo.get_messages(session_id)
+                for m in reversed(msgs):
+                    if m.role == MessageRole.ASSISTANT and m.content:
+                        text = m.text() if isinstance(m.content, list) else m.content
+                        if text and text.strip() and len(text.strip()) > 100:
+                            final_output = text.strip()
+                            break
+            if not final_output:
+                final_output = llm_response.content or ""
             if not final_output:
                 # Fall back to tool results
                 if not final_output:
