@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "corza-agents"
-version = "0.3.3"
+version = "0.3.4"
 description = "Agent framework for web applications. SSE streaming, PostgreSQL persistence, FastAPI integration."
 readme = "README.md"
 requires-python = ">=3.11"

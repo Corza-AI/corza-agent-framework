@@ -455,8 +455,11 @@ class Orchestrator:
 
             on_complete = ctx.metadata.get("on_subagent_complete") if ctx and ctx.metadata else None
             completed_child_id = child_session_id or result.child_session_id
+            report_id = None
             if on_complete and completed_child_id:
-                await on_complete(completed_child_id, result.status.value, result.output)
+                cb_result = await on_complete(completed_child_id, result.status.value, result.output)
+                if isinstance(cb_result, dict):
+                    report_id = cb_result.get("report_id")
 
             # Auto-mark plan item done/blocked based on result
             if plan_item_id and ctx and ctx.working_memory:
@@ -476,15 +479,17 @@ class Orchestrator:
                 turns=result.turns_used,
             )
 
-            return {
+            spawn_result = {
                 "status": result.status.value,
                 "output": result.output or f"Sub-agent '{agent_name}' produced no output.",
+                "report_id": report_id,
                 "session_id": result.child_session_id,
                 "agent_name": agent_name,
                 "turns_used": result.turns_used,
                 "tokens_used": result.tokens_used.total_tokens,
                 "error": result.error,
             }
+            return spawn_result
 
         async def _spawn_parallel(tasks_json, ctx):
             """Spawn multiple sub-agents concurrently and return all results."""
