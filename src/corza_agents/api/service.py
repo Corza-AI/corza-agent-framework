@@ -26,6 +26,7 @@ from corza_agents.core.types import (
     ToolType,
     _uuid,
 )
+from corza_agents.api.run_registry import get_registry, subscribe_iter
 from corza_agents.orchestrator.orchestrator import Orchestrator
 from corza_agents.streaming.events import StreamEvent
 
@@ -107,21 +108,66 @@ class AgentService:
         metadata: dict | None = None,
         variables: dict | None = None,
     ) -> AsyncIterator[StreamEvent]:
-        """Stream agent events for a message. Use in async for loop."""
+        """
+        Stream agent events for a message.
+
+        The agent run is spawned as a detached task owned by the process-wide
+        RunRegistry, NOT by the HTTP request. Subscribers (SSE consumers) can
+        come and go — client disconnect does not cancel the underlying run.
+        If a run is already in progress for this session, the caller
+        subscribes to it and receives backlog + live events.
+        """
         session = await self._orchestrator.repo.get_session(session_id)
         if not session:
             raise KeyError(f"Session {session_id} not found")
         agent_def = self._agents.get(session.agent_id)
         if not agent_def:
             raise KeyError(f"Agent '{session.agent_id}' not found")
-        async for event in self._orchestrator.run(
-            session_id,
-            content,
-            agent_def,
-            metadata,
-            variables,
-        ):
+
+        registry = get_registry()
+
+        def _factory() -> AsyncIterator[StreamEvent]:
+            return self._orchestrator.run(
+                session_id,
+                content,
+                agent_def,
+                metadata,
+                variables,
+            )
+
+        active, is_new = await registry.start(session_id, _factory)
+        if not is_new:
+            # A run was already in flight for this session. The new `content`
+            # is NOT fed to the agent — we just attach to the existing run so
+            # the caller sees its events. This matches the "one agent loop per
+            # session" invariant of the framework. Log loudly so duplicate
+            # POSTs (e.g. React strict-mode double-fires, client retries) are
+            # visible in ops dashboards.
+            log.warning(
+                "duplicate_send_message_attached_to_existing_run",
+                session_id=session_id,
+                dropped_content_preview=(content[:120] if content else ""),
+            )
+        async for event in subscribe_iter(active):
             yield event
+
+    async def subscribe_to_run(
+        self,
+        session_id: str,
+    ) -> AsyncIterator[StreamEvent] | None:
+        """
+        Attach to an in-flight run for `session_id` without sending a message.
+        Returns None if no run is active. Used by resume-stream endpoints.
+        """
+        registry = get_registry()
+        active = await registry.get(session_id)
+        if not active or active.done:
+            return None
+        return subscribe_iter(active)
+
+    async def cancel_run(self, session_id: str) -> bool:
+        """Cancel the in-flight run for this session, if any."""
+        return await get_registry().cancel(session_id)
 
     async def send_message_sync(
         self,
