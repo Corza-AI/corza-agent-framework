@@ -268,6 +268,26 @@ def create_agent_router(
         except Exception as e:
             return _error_response(500, str(e)[:500], "server_error")
 
+    @router.get("/sessions/{session_id}/stream")
+    async def resume_stream(session_id: str, request: Request):
+        """
+        Re-attach to the live SSE stream of an in-flight run.
+
+        Used when the client navigates away and returns: the agent kept
+        running server-side (owned by RunRegistry), and this endpoint
+        lets the browser resubscribe to the same event stream without
+        sending a new user message. Supports Last-Event-ID for gap-free
+        reconnection — the framework's sse_response layer handles the
+        replay-and-skip.
+
+        Returns 404 if no active run exists for this session (caller
+        should fall back to GET /messages for the persisted history).
+        """
+        events = await service.subscribe_to_run(session_id)
+        if events is None:
+            return _error_response(404, "no active run", "not_found")
+        return await sse_response(request, events)
+
     @router.get("/sessions/{session_id}/messages", response_model=list[MessageResponse])
     async def get_messages(
         session_id: str,
