@@ -359,7 +359,7 @@ class AgentEngine:
 
                 # Re-raise any LLM error
                 try:
-                    full_text, tool_calls, usage, stop_reason = await llm_future
+                    full_text, tool_calls, usage, stop_reason, thinking_text = await llm_future
                 except (LLMError, ContextOverflowError) as e:
                     # Turn-level recovery: don't fail the session, allow resume
                     log.error(
@@ -678,7 +678,7 @@ class AgentEngine:
         Fallback chain: if all retries on primary model fail and
         fallback_models is configured, tries each fallback in order.
 
-        Returns (full_text, tool_calls, usage, stop_reason).
+        Returns (full_text, tool_calls, usage, stop_reason, thinking_text).
         Raises the original error if all retries AND fallbacks exhausted.
         """
         # Build model chain: primary + fallbacks
@@ -806,7 +806,7 @@ class AgentEngine:
                         retryable=True,
                     )
 
-                return full_text, tool_calls, usage, stop_reason
+                return full_text, tool_calls, usage, stop_reason, thinking_text
 
             except LLMRateLimitError as e:
                 if attempt >= max_retries:
