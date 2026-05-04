@@ -395,12 +395,18 @@ class AgentEngine:
                 for mw in self._middleware:
                     llm_response = await mw.after_llm_call(llm_response, context)
 
-                # Persist assistant message — include thinking as content blocks if present
-                if thinking_text and llm_response.content:
-                    persist_content: str | list = [
-                        {"type": "thinking", "thinking": thinking_text},
-                        {"type": "text", "text": llm_response.content},
-                    ]
+                # Persist assistant message — always preserve thinking when present.
+                # Cases:
+                #   thinking + text       → [thinking, text]
+                #   thinking + no text    → [thinking]   (e.g. turn produced only tool_calls)
+                #   no thinking + text    → text (string)
+                #   no thinking + no text → "" (string)
+                persist_content: str | list
+                if thinking_text:
+                    blocks: list = [{"type": "thinking", "thinking": thinking_text}]
+                    if llm_response.content:
+                        blocks.append({"type": "text", "text": llm_response.content})
+                    persist_content = blocks
                 else:
                     persist_content = llm_response.content
 
