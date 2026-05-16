@@ -483,6 +483,7 @@ class Orchestrator:
 
             return {
                 "status": result.status.value,
+                "session_id": result.child_session_id,
                 "report": result.output or "",
                 "report_id": report_id,
                 "error": result.error,
