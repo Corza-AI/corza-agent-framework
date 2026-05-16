@@ -2,10 +2,10 @@
   <img src="https://raw.githubusercontent.com/Corza-AI/corza-agent-framework/main/docs/assets/corza-logo.png" alt="Corza AI" width="280" />
 </p>
 
-<h2 align="center">Agent Framework</h2>
+<h2 align="center">Corza Agent Framework</h2>
 
 <p align="center">
-  <strong>The agent framework built for web applications.</strong>
+  <strong>Drop AI agents into your web app — with streaming, sessions, and a real database.</strong>
 </p>
 
 <p align="center">
@@ -15,257 +15,174 @@
 </p>
 
 <p align="center">
-  <a href="#quickstart">Quickstart</a> &middot;
-  <a href="docs/architecture.md">Architecture</a> &middot;
-  <a href="docs/getting-started.md">Getting Started</a> &middot;
-  <a href="docs/skills.md">Skills &amp; Knowledge</a> &middot;
+  <a href="#-quickstart">Quickstart</a> &middot;
+  <a href="#-how-it-works">How it works</a> &middot;
+  <a href="#-build-a-real-app">Build a real app</a> &middot;
+  <a href="#-going-deeper">Going deeper</a> &middot;
   <a href="CHANGELOG.md">Changelog</a>
 </p>
 
 ---
 
-Every agent framework out there is built for scripts and notebooks. When you need an agent inside a real web app — with users, sessions, SSE streaming, and a database — you're on your own.
+## Why Corza?
 
-Corza fixes that. It lives inside your FastAPI app, shares your PostgreSQL, streams to your frontend over SSE, and knows about your users and tenants.
+Most agent frameworks are designed for Jupyter notebooks and CLI scripts. The moment you try to put an agent **inside a real product** — with logged-in users, live streaming to a browser, conversations that survive a restart, and a Postgres you already own — you're suddenly writing all the plumbing yourself.
 
-```
+Corza is the plumbing. It's a small, opinionated Python library that gives you:
+
+- A **FastAPI router** with endpoints for sessions, messages, streaming, cancel, and resume — already wired up.
+- **SSE streaming** to your frontend that just works (heartbeats, reconnection, disconnect detection).
+- **Persistence** to Postgres, SQLite, or memory — tables auto-created, no migrations to babysit.
+- **Multi-tenant by default** — every session is scoped to a `user_id` and `tenant_id`.
+- **23+ LLM providers** behind one string — `"openai:gpt-4.1"`, `"anthropic:claude-sonnet-4-6"`, `"ollama:qwen3:8b"`.
+- **Sub-agents that actually work** — a coordinator can dispatch specialists in parallel and pull their reports back.
+
+You write the tools and the prompts. Corza handles the rest.
+
+---
+
+## 🚀 Quickstart
+
+```bash
 pip install "corza-agents[openai]"
 ```
 
----
-
-## Why Corza?
-
-| Challenge | How Corza Solves It |
-|-----------|-------------------|
-| **No streaming** — most frameworks return full responses | Real-time SSE streaming with heartbeat, reconnection, and client disconnect detection |
-| **No persistence** — conversations vanish on restart | PostgreSQL, SQLite, or in-memory backends with auto-created tables |
-| **No multi-tenancy** — agents don't know about users | Built-in user/tenant scoping on every session and query |
-| **Single model lock-in** — tied to one LLM provider | 23+ providers with a `provider:model` string. Swap in one line |
-| **No error recovery** — one failure kills the session | Auto-retry with backoff, fallback chains, context overflow recovery |
-| **No sub-agents** — orchestration is DIY | Built-in orchestrator with parallel dispatch and nuclear stop |
-
----
-
-## Quickstart
-
-### 30 Seconds to an Agent API
+The smallest useful agent — a tool, an agent definition, and a full HTTP API:
 
 ```python
 from corza_agents import AgentDefinition, ToolRegistry, create_app, tool
 
 @tool(description="Search the knowledge base")
 async def search(query: str) -> str:
-    return f"Results for: {query}"
+    return f"Top result for: {query}"
 
 tools = ToolRegistry()
 tools.register_function(search)
 
 app = create_app(
-    agents={"assistant": AgentDefinition(
-        name="assistant",
-        model="openai:gpt-4.1",
-        tools=["search"],
-    )},
+    agents={
+        "assistant": AgentDefinition(
+            name="assistant",
+            model="openai:gpt-4.1",
+            tools=["search"],
+        )
+    },
     tool_registry=tools,
     db_url="postgresql+asyncpg://user:pass@localhost:5432/mydb",
 )
-# uvicorn app:app
+# uvicorn app:app --reload
 ```
 
-That gives you a full REST API:
+That's it. You now have a working agent API:
 
-```
-POST   /api/agent/sessions                     → create session
-POST   /api/agent/sessions/{id}/messages        → send message (SSE stream)
-GET    /api/agent/sessions/{id}/messages        → message history
-POST   /api/agent/sessions/{id}/cancel          → cancel session + all sub-agents
-POST   /api/agent/sessions/{id}/resume          → resume failed session
-DELETE /api/agent/sessions/{id}                 → delete session
-GET    /api/agent/health                        → health check
-```
+| Endpoint | What it does |
+|----------|--------------|
+| `POST /api/agent/sessions` | Start a new conversation |
+| `POST /api/agent/sessions/{id}/messages` | Send a message — streams the reply as SSE |
+| `GET  /api/agent/sessions/{id}/messages` | Fetch the conversation history |
+| `POST /api/agent/sessions/{id}/cancel` | Stop a running session (and any sub-agents) |
+| `POST /api/agent/sessions/{id}/resume` | Resume after a failure |
+| `GET  /api/agent/health` | Health check |
 
-### Stream to Your Frontend
+### Stream the reply to a browser
 
 ```javascript
 const res = await fetch(`/api/agent/sessions/${sessionId}/messages`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ content: "What is AI?", stream: true }),
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ content: "What is AI?", stream: true }),
 });
 
 const reader = res.body.getReader();
 const decoder = new TextDecoder();
 
 while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    for (const line of decoder.decode(value).split("\n")) {
-        if (line.startsWith("data: ")) {
-            const event = JSON.parse(line.slice(6));
-            if (event.data?.text) {
-                document.getElementById("output").textContent += event.data.text;
-            }
-        }
-    }
+  const { done, value } = await reader.read();
+  if (done) break;
+  for (const line of decoder.decode(value).split("\n")) {
+    if (!line.startsWith("data: ")) continue;
+    const event = JSON.parse(line.slice(6));
+    if (event.data?.text) output.textContent += event.data.text;
+  }
 }
 ```
 
 ---
 
-## How It Works
+## 🧠 How it works
 
-### High-Level Architecture
-
-```mermaid
-flowchart TB
-    Client([Browser / Client])
-    subgraph App["Your FastAPI App"]
-        Router["Router<br/><sub>SSE streaming · structured errors</sub>"]
-        Service["AgentService<br/><sub>stateless, framework-agnostic</sub>"]
-        Orch["Orchestrator<br/><sub>brain pattern · sub-agent mgmt</sub>"]
-        Engine["AgentEngine<br/><sub>ReAct loop</sub>"]
-        LLM[LLM]
-        Tools[Tools]
-        Mem[Memory]
-        MW["Middleware Pipeline<br/><sub>compression · rate limit · audit · tokens · permissions · loop guard</sub>"]
-        DB[("Persistence<br/><sub>Postgres · SQLite · in-memory</sub>")]
-    end
-    Client -- HTTP / SSE --> Router --> Service --> Orch --> Engine
-    Engine --> LLM
-    Engine --> Tools
-    Engine --> Mem
-    Engine -. hooks .-> MW
-    Engine --> DB
-```
-
-### The ReAct Loop
-
-Every agent runs a **Reason + Act** loop. Each iteration is a **turn**, and the agent keeps looping until the LLM produces a final text response (no more tool calls), `max_turns` is reached, or an unrecoverable error occurs.
+A Corza agent is a small **think → act → think** loop. The LLM decides what tool to call, you run the tool, the result goes back to the LLM, and it decides what to do next — until it produces a final answer.
 
 ```mermaid
 flowchart LR
     U([User message]) --> L1[LLM]
-    L1 -->|tool calls| T[Tools]
+    L1 -->|wants a tool| T[Tool runs]
     T --> L2[LLM]
     L2 -->|more tools| T
-    L2 -->|final text| R([Response])
+    L2 -->|final answer| R([Reply streams to user])
 ```
 
-### Multi-Agent Orchestration
+Each lap is a **turn**. Corza persists every message and tool call as it happens, so you can stream live to the browser *and* show the full history when the user comes back tomorrow.
 
-The Orchestrator implements a **brain pattern** — one coordinator agent delegates to specialized sub-agents.
+### Where it fits in your app
+
+Corza sits between your FastAPI router and your LLM provider. You can use it as a drop-in router (`create_app`) or wire individual pieces into your existing app.
 
 ```mermaid
 flowchart TB
-    B(["Brain Agent"])
-    R["Researcher<br/><sub>search · extract</sub>"]
-    A["Analyst<br/><sub>query · compute</sub>"]
-    W["Writer<br/><sub>format · compose</sub>"]
-    S(["Synthesized Answer"])
+    Client([Browser])
+    subgraph App["Your FastAPI app"]
+        Router["Router<br/><sub>SSE · errors · pagination</sub>"]
+        Service["AgentService"]
+        Orch["Orchestrator<br/><sub>multi-agent coordination</sub>"]
+        Engine["AgentEngine<br/><sub>the think-act loop</sub>"]
+        DB[("Postgres / SQLite / memory")]
+    end
+    Provider([LLM provider])
+    Client <-- SSE --> Router --> Service --> Orch --> Engine
+    Engine <--> Provider
+    Engine --> DB
+```
+
+### When one agent isn't enough
+
+For complex work, a **coordinator** agent can spawn specialists, run them in parallel, and pull their reports back together.
+
+```mermaid
+flowchart TB
+    B([Coordinator])
+    R["Researcher"]
+    A["Analyst"]
+    W["Writer"]
+    S([Final answer])
     B --> R --> S
     B --> A --> S
     B --> W --> S
 ```
 
-**Parallel dispatch** — up to 5 sub-agents run concurrently (configurable):
-
 ```python
-brain = AgentDefinition(
-    name="brain",
-    model="openai:gpt-4.1",
-    max_parallel_agents=5,  # default: 5, max: 10
+result = await orchestrator.run(
+    "brain",
+    "Investigate Q4 revenue dip and draft a memo",
 )
+# brain.manage_agent(action="spawn_parallel", tasks=[...])
+# → researcher + analyst + writer run concurrently
+# → coordinator reads their reports and writes the memo
 ```
 
-**Nuclear stop** — cancel a session and all its children:
+If a sub-agent gets stuck, **nuclear stop** cancels it and all its children at once:
 
 ```python
-count = await orchestrator.cancel(session_id)
-# POST /api/agent/sessions/{id}/cancel → {"sessions_cancelled": 3}
-```
-
-### The Prompt Stack
-
-Corza separates agent identity into four composable layers:
-
-| Layer | Role | Contents |
-|------:|------|----------|
-| **1 · System Prompt** | _Principles_ | Who the agent is, how it thinks. Short, permanent, identity-level. |
-| **2 · Knowledge** | _What it knows_ | Project context loaded from `.md` files. |
-| **3 · Skills** | _Procedures_ | Step-by-step playbooks, activated per task. |
-| **4 · Working Memory** | _Scratch_ | Runtime state built up during the session. |
-
-See [docs/skills.md](docs/skills.md) for the full explanation.
-
----
-
-## Installation
-
-```bash
-# Core framework (FastAPI + async PostgreSQL)
-pip install corza-agents
-
-# With your preferred LLM provider
-pip install "corza-agents[openai]"        # OpenAI
-pip install "corza-agents[anthropic]"     # Anthropic
-pip install "corza-agents[google]"        # Google Gemini
-pip install "corza-agents[all]"           # Everything
-```
-
-**Requirements:** Python 3.11+
-
----
-
-## 23 LLM Providers
-
-No default model. You choose at runtime with a `provider:model` string:
-
-```python
-model = "openai:gpt-4.1"
-model = "anthropic:claude-sonnet-4-6"
-model = "google:gemini-2.5-pro"
-model = "groq:llama-3.3-70b-versatile"
-model = "ollama:qwen3:8b"  # local, free
-```
-
-<details>
-<summary><strong>All supported providers</strong></summary>
-
-| Hosted | Fast inference | Local / self-hosted |
-|--------|----------------|---------------------|
-| OpenAI · Anthropic · Google · Mistral · Cohere · xAI · DeepSeek · Perplexity | Groq · Cerebras · Fireworks · Together | Ollama · LM Studio · vLLM · llama.cpp · LocalAI · Jan · Lemonade · Jellybox · Docker Model Runner |
-
-Plus any OpenAI-compatible endpoint via `custom_providers`.
-
-</details>
-
-### Fallback Chains
-
-If your primary provider goes down, the framework tries alternatives in order:
-
-```python
-agent = AgentDefinition(
-    name="assistant",
-    model="anthropic:claude-sonnet-4-6",
-    fallback_models=["groq:llama-3.3-70b", "cerebras:llama-3.3-70b"],
-)
-```
-
-### Custom Providers
-
-Any OpenAI-compatible API:
-
-```python
-llm = AgentLLM(custom_providers={"internal": "https://llm.internal.company/v1"})
-# Then use: model="internal:my-fine-tuned-model"
+await orchestrator.cancel(session_id)
 ```
 
 ---
 
-## Tools
+## 🛠️ Build a real app
 
-Define tools with the `@tool` decorator. The framework auto-generates JSON schemas from type annotations:
+### Define a tool
+
+Type hints become the schema. The LLM sees exactly what arguments it can pass.
 
 ```python
 from corza_agents import tool, ExecutionContext
@@ -274,35 +191,58 @@ from corza_agents import tool, ExecutionContext
 async def search(query: str, limit: int = 10) -> dict:
     results = await db.search(query, limit)
     return {"results": results, "count": len(results)}
+```
 
-# Tools can access session context via ExecutionContext
-@tool(description="Store a finding in working memory")
+Tools can read the live session (user, tenant, working memory) via `ctx` — it's auto-injected and hidden from the LLM's schema:
+
+```python
+@tool(description="Remember something for later this session")
 def remember(key: str, value: str, ctx: ExecutionContext) -> str:
     ctx.working_memory.store(key, value)
     return f"Stored '{key}'"
 ```
 
-The `ctx` parameter is auto-injected by the engine — it does not appear in the tool's JSON schema sent to the LLM.
+### Pick any LLM
 
-### Bulk Registration
+Models are just strings — `"provider:model"`. Swap them in one line.
 
 ```python
-tools = ToolRegistry()
-tools.register_many([search, remember, calculate, fetch_data])
+model = "openai:gpt-4.1"
+model = "anthropic:claude-sonnet-4-6"
+model = "ollama:qwen3:8b"          # free, runs on your laptop
 ```
 
----
-
-## Users & Tenants
-
-Every session is scoped to a user and tenant. Your app handles authentication — the framework accepts IDs as pass-through context:
+If your primary is down, Corza tries fallbacks automatically:
 
 ```python
-# Option 1: HTTP headers (set by your auth middleware)
-# X-User-ID: user_123
-# X-Tenant-ID: acme_corp
+AgentDefinition(
+    name="assistant",
+    model="anthropic:claude-sonnet-4-6",
+    fallback_models=["groq:llama-3.3-70b", "openai:gpt-4.1"],
+)
+```
 
-# Option 2: Programmatic
+<details>
+<summary><strong>All 23 supported providers</strong></summary>
+
+| Hosted | Fast inference | Local / self-hosted |
+|--------|----------------|---------------------|
+| OpenAI · Anthropic · Google · Mistral · Cohere · xAI · DeepSeek · Perplexity | Groq · Cerebras · Fireworks · Together | Ollama · LM Studio · vLLM · llama.cpp · LocalAI · Jan · Lemonade · Jellybox · Docker Model Runner |
+
+Plus any OpenAI-compatible endpoint via `custom_providers={"internal": "https://..."}`.
+
+</details>
+
+### Multi-tenant from day one
+
+Your app handles auth — Corza just receives the IDs and scopes everything to them.
+
+```python
+# Set by your auth middleware as HTTP headers:
+#   X-User-ID: user_123
+#   X-Tenant-ID: acme_corp
+
+# Or programmatically:
 session = await service.create_session(
     "assistant",
     user_id="user_123",
@@ -311,126 +251,130 @@ session = await service.create_session(
 sessions = await service.get_sessions_for_user("user_123", "acme_corp")
 ```
 
+### Pick your database
+
+Same API across all three — start small, upgrade when ready.
+
+```python
+from corza_agents import create_repository
+
+repo = create_repository("memory")                           # dev / tests
+repo = create_repository("sqlite", db_path="agents.db")      # single-node
+repo = create_repository("postgres", db_url="postgresql+asyncpg://...")  # production
+```
+
+Tables (`af_sessions`, `af_messages`, `af_tool_executions`, `af_artifacts`, `af_audit_log`, `af_memory`) are created on startup — no migration step.
+
 ---
 
-## Middleware
+## 🧩 Going deeper
 
-Hook into the agent loop at six points — before/after LLM calls, before/after tool execution, on turn complete, and on error:
+### The prompt stack
+
+Each agent's "personality" is built from four layers. Keep the system prompt short and identity-level; load knowledge and procedures as separate, swappable pieces.
+
+| Layer | Role | Contents |
+|------:|------|----------|
+| **1 · System Prompt** | _Principles_ | Who the agent is, how it thinks. Short and permanent. |
+| **2 · Knowledge** | _What it knows_ | Project context loaded from `.md` files. |
+| **3 · Skills** | _Procedures_ | Step-by-step playbooks, activated per task. |
+| **4 · Working Memory** | _Scratch_ | Runtime state built up during the session. |
+
+See [docs/skills.md](docs/skills.md) for the full breakdown.
+
+### Middleware
+
+Plug into the loop at six points (before/after LLM, before/after tool, on turn complete, on error). Useful for logging, gating, or transforming messages.
 
 ```python
 from corza_agents import BaseMiddleware
 
 class LoggingMiddleware(BaseMiddleware):
     async def before_llm_call(self, messages, tools, context):
-        print(f"Turn {context.turn_number}: calling LLM with {len(messages)} messages")
+        print(f"Turn {context.turn_number}: {len(messages)} messages")
         return messages, tools
-
-    async def after_tool_call(self, tool_call, result, context):
-        print(f"Tool {tool_call.tool_name}: {result.status.value}")
-        return result
 ```
 
-### Built-in Middleware
+Built-in middleware you can turn on:
 
-| Middleware | Purpose |
-|-----------|---------|
-| **ContextCompressionMiddleware** | 4-tier progressive compression of old tool results (fresh → warm → cold → expired) |
-| **RateLimitMiddleware** | Token-bucket rate limiting per user, tenant, or session |
-| **AuditMiddleware** | Logs every LLM call and tool execution to the database |
-| **TokenTrackingMiddleware** | Tracks token usage and estimates cost per session |
-| **PermissionMiddleware** | Tool-level access control with glob pattern matching |
-| **LoopGuardMiddleware** | Detects and breaks infinite tool-calling loops |
+| Middleware | What it does |
+|-----------|--------------|
+| `ContextCompressionMiddleware` | Ages old tool results through 4 tiers so context stays small |
+| `RateLimitMiddleware` | Token-bucket limits per user, tenant, or session |
+| `AuditMiddleware` | Logs every LLM call and tool execution |
+| `TokenTrackingMiddleware` | Tracks token usage and cost estimates |
+| `PermissionMiddleware` | Restrict which tools each user can call |
+| `LoopGuardMiddleware` | Breaks out of repeating tool-call loops |
 
----
+### Error recovery (free)
 
-## Persistence
+Failures happen. Corza handles the common ones for you:
 
-Three backends, one interface. Start with in-memory, upgrade when ready:
+| Failure | What Corza does |
+|---------|-----------------|
+| Rate limit (429) | Waits `retry_after`, then retries |
+| Timeout / connection | Exponential backoff up to `max_llm_retries` |
+| Context overflow | Auto-compacts the window and retries once |
+| Provider down | Falls through `fallback_models` in order |
+| Anything else | Session → `WAITING`; resumes on the next message |
 
-```python
-from corza_agents import create_repository
+### Long conversations
 
-repo = create_repository("memory")     # No deps, data lost on exit
-repo = create_repository("sqlite", db_path="agents.db")  # Local file
-repo = create_repository("postgres", db_url="postgresql+asyncpg://...")  # Production
-```
+Three layers of defense keep the context window healthy:
 
-All backends store the same data:
-
-| Table | Contents |
-|-------|----------|
-| `af_sessions` | Sessions with status, token counts, user/tenant metadata |
-| `af_messages` | Conversation messages (user, assistant, tool results) |
-| `af_tool_executions` | Tool call audit log with inputs, outputs, timing |
-| `af_artifacts` | Named outputs stored by agents |
-| `af_audit_log` | Middleware audit events |
-| `af_memory` | Cross-session long-term memory |
-
-Tables are auto-created on startup. Schema versions are tracked automatically.
-
----
-
-## Error Recovery
-
-Built-in, no configuration needed:
-
-| Failure | Recovery |
-|---------|----------|
-| **Rate limit (429)** | Wait `retry_after`, then retry |
-| **Timeout / connection** | Exponential backoff up to `max_llm_retries` |
-| **Context overflow** | Auto-compact window, retry once |
-| **Provider down** | Try `fallback_models` in order |
-| **Non-retryable error** | Session → `WAITING`, resume on next message |
-
----
-
-## Context Management
-
-Long conversations are handled automatically with a three-layer defense:
-
-1. **Progressive compression** — old tool results age through 4 tiers (fresh → warm → cold → expired), each more aggressively compressed
-2. **LLM summarization** — when context hits 80% capacity, older messages are summarized by the LLM
-3. **Health monitoring** — at 85% the agent is warned to wrap up; at 90% it's forced to stop
+1. **Progressive compression** — old tool results decay through `fresh → warm → cold → expired`.
+2. **LLM summarization** — at 80% capacity, older messages get summarized.
+3. **Health monitoring** — at 85% the agent is warned to wrap up; at 90% it's forced to stop.
 
 ```python
 from corza_agents import ContextHealthConfig
 
-agent = AgentDefinition(
+AgentDefinition(
     name="researcher",
     model="openai:gpt-4.1",
     metadata={"context_health": ContextHealthConfig(
         max_tokens=128_000,
-        compress_threshold=0.40,   # Start compressing tool results
-        compact_threshold=0.80,    # Trigger LLM summarization
+        compress_threshold=0.40,
+        compact_threshold=0.80,
     )},
 )
 ```
 
----
+### Streaming events
 
-## Streaming Events
+Every interesting moment in the loop emits an SSE event. Wire whichever ones you care about into your UI.
 
-Every action in the ReAct loop emits a `StreamEvent` over SSE:
-
-| Event | When |
-|-------|------|
-| `session.started` | Run begins |
-| `turn.started` | New turn begins |
-| `llm.text_delta` | LLM streams a text chunk |
-| `llm.tool_call` | LLM requests a tool call |
-| `tool.executing` | Tool execution begins |
-| `tool.result` | Tool returns a result |
-| `subagent.started` | Sub-agent spawned |
-| `subagent.completed` | Sub-agent finished |
-| `turn.completed` | Turn ends |
-| `session.completed` | Run ends |
+| Event | Fires when |
+|-------|-----------|
+| `session.started` · `session.completed` | A run begins / ends |
+| `turn.started` · `turn.completed` | One think-act lap |
+| `llm.text_delta` | A chunk of generated text |
+| `llm.tool_call` | The LLM asked for a tool |
+| `tool.executing` · `tool.result` | A tool ran |
+| `subagent.started` · `subagent.completed` | A sub-agent was spawned / finished |
 | `error` | Something went wrong |
 
----
+### Scheduled agents
 
-## FastAPI Dependency Injection
+Run an agent on a cron, once at a specific time, or on an event.
 
-Use Corza as a service inside your existing FastAPI routes:
+```python
+from corza_agents import AgentScheduler, ScheduleEntry
+
+scheduler = AgentScheduler(orchestrator)
+scheduler.add(ScheduleEntry(
+    name="daily-report",
+    agent="analyst",
+    message="Generate the daily metrics report",
+    cron="0 9 * * *",
+    tenant_id="acme_corp",
+))
+await scheduler.start()
+```
+
+### Use Corza inside an existing FastAPI app
+
+You don't have to use `create_app` — inject the service into your own routes:
 
 ```python
 from corza_agents.dependencies import get_service, get_user_context
@@ -447,50 +391,48 @@ async def analyze(
 
 ---
 
-## Scheduler
+## 📚 Examples
 
-Run agents on a schedule — cron, one-time, or event-triggered:
+Four runnable examples, smallest to largest:
 
-```python
-from corza_agents import AgentScheduler, ScheduleEntry
-
-scheduler = AgentScheduler(orchestrator)
-scheduler.add(ScheduleEntry(
-    name="daily-report",
-    agent="analyst",
-    message="Generate the daily metrics report",
-    cron="0 9 * * *",  # Every day at 9 AM
-    tenant_id="acme_corp",
-))
-await scheduler.start()
-```
-
----
-
-## Examples
-
-| Example | Description | Lines |
-|---------|-------------|-------|
-| [`01_hello_agent.py`](examples/01_hello_agent.py) | Minimal agent with one tool | ~25 |
-| [`02_custom_tools.py`](examples/02_custom_tools.py) | Sync/async tools, working memory, bulk registration | ~50 |
-| [`03_multi_agent.py`](examples/03_multi_agent.py) | Orchestrator with researcher + writer sub-agents | ~70 |
-| [`04_web_app.py`](examples/04_web_app.py) | Complete FastAPI app with HTML chat UI | ~100 |
-
-Run any example:
+| File | What it shows | Size |
+|------|--------------|-----:|
+| [`01_hello_agent.py`](examples/01_hello_agent.py) | One tool, one agent | ~25 lines |
+| [`02_custom_tools.py`](examples/02_custom_tools.py) | Sync/async tools, working memory | ~50 lines |
+| [`03_multi_agent.py`](examples/03_multi_agent.py) | Coordinator with researcher + writer sub-agents | ~70 lines |
+| [`04_web_app.py`](examples/04_web_app.py) | Full FastAPI app with an HTML chat UI | ~100 lines |
 
 ```bash
-# With Ollama (free, local)
+# Free / local
 ollama pull qwen3:8b && ollama serve
 python examples/01_hello_agent.py
 
-# With OpenAI
+# Or with OpenAI
 export OPENAI_API_KEY="sk-..."
-python examples/01_hello_agent.py  # change model to "openai:gpt-4.1"
+python examples/01_hello_agent.py
 ```
 
 ---
 
-## Project Structure
+## 🔒 Security notes
+
+A few things to know before you ship:
+
+- **Auth is yours.** Corza never authenticates anyone — your app passes `user_id` and `tenant_id` and Corza scopes data to them.
+- **Code execution is off by default.** The `CODE` tool type runs Python in a subprocess with no sandbox. Opt in with `CORZA_ALLOW_CODE_EXECUTION=true` only in trusted environments.
+- **Runtime registration is off by default.** `POST /tools` and `POST /agents` return 403 unless you set `admin_only=False`.
+- **Tool permissions.** Use `PermissionMiddleware` to restrict who can call what:
+
+  ```python
+  PermissionMiddleware(rules=[
+      PermissionRule(pattern="search_*", allow=True),
+      PermissionRule(pattern="admin_*", allow=False),
+  ])
+  ```
+
+---
+
+## 📁 Project layout
 
 <details>
 <summary><strong>Click to expand the full module tree</strong></summary>
@@ -498,104 +440,29 @@ python examples/01_hello_agent.py  # change model to "openai:gpt-4.1"
 ```
 corza-agent-framework/
 ├── src/corza_agents/
-│   ├── core/              # Engine, LLM client, types, error hierarchy
-│   │   ├── engine.py      # AgentEngine — the ReAct loop
-│   │   ├── llm.py         # AgentLLM — 23+ provider adapters
-│   │   ├── types.py       # All dataclasses and enums
-│   │   └── errors.py      # Typed error hierarchy
-│   ├── api/               # HTTP layer
-│   │   ├── router.py      # FastAPI router (thin adapter)
-│   │   ├── service.py     # AgentService (framework-agnostic)
-│   │   └── schemas.py     # Request/response Pydantic models
+│   ├── core/              # Engine, LLM client, types, errors
+│   ├── api/               # FastAPI router + AgentService
 │   ├── orchestrator/      # Multi-agent coordination
-│   │   ├── orchestrator.py # Brain pattern with sub-agent dispatch
-│   │   └── sub_agent.py   # SubAgentRunner isolation
-│   ├── tools/             # Tool system
-│   │   ├── decorators.py  # @tool decorator
-│   │   ├── registry.py    # ToolRegistry with JSON schema gen
-│   │   ├── builtin.py     # Built-in tools (manage_agent, etc.)
-│   │   └── handlers.py    # Tool type dispatch (function, code, API)
+│   ├── tools/             # @tool decorator, registry, built-ins
 │   ├── skills/            # Skill loading and injection
-│   │   └── manager.py     # SkillsManager (file, URL, DB, function)
-│   ├── memory/            # Context management
-│   │   ├── working.py     # Per-session working memory
-│   │   ├── context.py     # ContextManager (truncation, summarization)
-│   │   └── health.py      # Context health monitoring
-│   ├── middleware/         # Pipeline hooks
-│   │   ├── base.py        # BaseMiddleware interface
-│   │   ├── audit.py       # AuditMiddleware
-│   │   ├── rate_limit.py  # RateLimitMiddleware
-│   │   ├── token_tracking.py
-│   │   ├── permissions.py # PermissionMiddleware
-│   │   ├── context_compression.py
-│   │   └── loop_guard.py  # LoopGuardMiddleware
-│   ├── persistence/       # Storage backends
-│   │   ├── base.py        # BaseRepository ABC
-│   │   ├── memory.py      # InMemoryRepository
-│   │   ├── sqlite.py      # SQLiteRepository
-│   │   ├── repository.py  # PostgresRepository
-│   │   ├── models.py      # SQLAlchemy table definitions
-│   │   └── factory.py     # create_repository()
+│   ├── memory/            # Working memory + context management
+│   ├── middleware/        # Pipeline hooks (audit, rate-limit, …)
+│   ├── persistence/       # Memory / SQLite / Postgres backends
 │   ├── streaming/         # SSE event system
-│   │   ├── events.py      # StreamEvent definitions
-│   │   └── sse.py         # SSE response helpers
-│   ├── prompts/           # System prompt construction
-│   │   └── templates.py   # Prompt templates and builders
-│   ├── scheduler/         # Scheduled agent execution
-│   │   ├── scheduler.py   # AgentScheduler
-│   │   └── models.py      # ScheduleEntry
+│   ├── prompts/           # System prompt templates
+│   ├── scheduler/         # Cron / one-shot / event triggers
 │   ├── app.py             # create_app() convenience
 │   └── dependencies.py    # FastAPI DI helpers
-├── examples/              # Runnable examples (01–04)
+├── examples/              # 01–04 runnable examples
 ├── tests/                 # 235+ tests across 26 files
-├── docs/                  # Extended documentation
-└── pyproject.toml         # Package metadata
+└── docs/                  # Extended documentation
 ```
 
 </details>
 
 ---
 
-## Security
-
-### Authentication
-
-The framework does **not** implement authentication. Your app handles auth — the framework receives `user_id` and `tenant_id` as pass-through context that scopes sessions and data.
-
-### Code Execution
-
-The `CODE` tool type runs Python in a subprocess with **no sandboxing** beyond a timeout. It is **disabled by default**:
-
-```bash
-export CORZA_ALLOW_CODE_EXECUTION=true  # Only enable in trusted environments
-```
-
-### Runtime Registration
-
-`POST /tools` and `POST /agents` endpoints return **403 by default**. Opt-in:
-
-```python
-router = create_agent_router(orchestrator, agents, admin_only=False)
-```
-
-### Tool Permissions
-
-Use `PermissionMiddleware` to restrict which tools users can access:
-
-```python
-from corza_agents import PermissionMiddleware, PermissionRule
-
-middleware = PermissionMiddleware(rules=[
-    PermissionRule(pattern="search_*", allow=True),
-    PermissionRule(pattern="admin_*", allow=False),
-])
-```
-
----
-
-## Contributing
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, testing, and code style guidelines.
+## 🤝 Contributing
 
 ```bash
 git clone https://github.com/Corza-AI/corza-agent-framework.git
@@ -604,6 +471,8 @@ python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev,sqlite]"
 pytest
 ```
+
+Details in [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ---
 
