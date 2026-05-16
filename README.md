@@ -117,83 +117,55 @@ while (true) {
 
 ### High-Level Architecture
 
-```
-┌──────────────────────────────────────────────────────────────────┐
-│                        Your FastAPI App                          │
-│                                                                  │
-│  ┌──────────────────────────────────────────────────────────┐   │
-│  │  Router (SSE streaming, structured errors, pagination)    │   │
-│  │                                                            │   │
-│  │  ┌──────────────────────────────────────────────────────┐ │   │
-│  │  │  AgentService (stateless, no web imports)            │ │   │
-│  │  │                                                      │ │   │
-│  │  │  ┌──────────────────────────────────────────────────┐│ │   │
-│  │  │  │  Orchestrator (brain pattern, sub-agent mgmt)   ││ │   │
-│  │  │  │                                                  ││ │   │
-│  │  │  │  ┌──────────────────────────────────────┐       ││ │   │
-│  │  │  │  │  AgentEngine (ReAct loop)            │       ││ │   │
-│  │  │  │  │  ┌───────┐ ┌───────┐ ┌───────────┐  │       ││ │   │
-│  │  │  │  │  │  LLM  │ │ Tools │ │  Memory   │  │       ││ │   │
-│  │  │  │  │  └───────┘ └───────┘ └───────────┘  │       ││ │   │
-│  │  │  │  └──────────────────────────────────────┘       ││ │   │
-│  │  │  └──────────────────────────────────────────────────┘│ │   │
-│  │  └──────────────────────────────────────────────────────┘ │   │
-│  └──────────────────────────────────────────────────────────────┘│
-│                                                                  │
-│  ┌─────────────────────────────────────────────────────────────┐ │
-│  │  Middleware Pipeline                                         │ │
-│  │  Context Compression → Rate Limit → Audit → Token Tracking  │ │
-│  │  → Permission → Loop Guard → Custom                         │ │
-│  └─────────────────────────────────────────────────────────────┘ │
-│                                                                  │
-│  ┌─────────────────────────────────────────────────────────────┐ │
-│  │  Persistence (PostgreSQL / SQLite / In-Memory)              │ │
-│  │  sessions │ messages │ tool_executions │ artifacts │ audit  │ │
-│  └─────────────────────────────────────────────────────────────┘ │
-└──────────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TB
+    Client([Browser / Client])
+    subgraph App["Your FastAPI App"]
+        Router["Router<br/><sub>SSE streaming · structured errors</sub>"]
+        Service["AgentService<br/><sub>stateless, framework-agnostic</sub>"]
+        Orch["Orchestrator<br/><sub>brain pattern · sub-agent mgmt</sub>"]
+        Engine["AgentEngine<br/><sub>ReAct loop</sub>"]
+        LLM[LLM]
+        Tools[Tools]
+        Mem[Memory]
+        MW["Middleware Pipeline<br/><sub>compression · rate limit · audit · tokens · permissions · loop guard</sub>"]
+        DB[("Persistence<br/><sub>Postgres · SQLite · in-memory</sub>")]
+    end
+    Client -- HTTP / SSE --> Router --> Service --> Orch --> Engine
+    Engine --> LLM
+    Engine --> Tools
+    Engine --> Mem
+    Engine -. hooks .-> MW
+    Engine --> DB
 ```
 
 ### The ReAct Loop
 
-Every agent runs a **Reason + Act** loop:
+Every agent runs a **Reason + Act** loop. Each iteration is a **turn**, and the agent keeps looping until the LLM produces a final text response (no more tool calls), `max_turns` is reached, or an unrecoverable error occurs.
 
+```mermaid
+flowchart LR
+    U([User message]) --> L1[LLM]
+    L1 -->|tool calls| T[Tools]
+    T --> L2[LLM]
+    L2 -->|more tools| T
+    L2 -->|final text| R([Response])
 ```
-User message
-     │
-     ▼
-┌─────────┐     ┌─────────┐     ┌─────────┐
-│   LLM   │ ──▶ │  Tools  │ ──▶ │   LLM   │ ──▶ ... ──▶ Final response
-└─────────┘     └─────────┘     └─────────┘
-     ▲                                │
-     │    messages persisted each turn │
-     └────────────────────────────────┘
-```
-
-Each iteration is a **turn**. The agent keeps looping until:
-- The LLM produces a final text response (no more tool calls)
-- `max_turns` is reached
-- An unrecoverable error occurs
 
 ### Multi-Agent Orchestration
 
-The Orchestrator implements a **brain pattern** — one coordinator agent delegates to specialized sub-agents:
+The Orchestrator implements a **brain pattern** — one coordinator agent delegates to specialized sub-agents.
 
-```
-                        Brain Agent
-                            │
-              ┌─────────────┼─────────────┐
-              │             │             │
-              ▼             ▼             ▼
-        ┌───────────┐ ┌──────────┐ ┌──────────┐
-        │ Researcher│ │ Analyst  │ │  Writer  │
-        │  (search, │ │ (query,  │ │ (format, │
-        │  extract) │ │ compute) │ │ compose) │
-        └───────────┘ └──────────┘ └──────────┘
-              │             │             │
-              └─────────────┼─────────────┘
-                            │
-                            ▼
-                    Synthesized Answer
+```mermaid
+flowchart TB
+    B(["Brain Agent"])
+    R["Researcher<br/><sub>search · extract</sub>"]
+    A["Analyst<br/><sub>query · compute</sub>"]
+    W["Writer<br/><sub>format · compose</sub>"]
+    S(["Synthesized Answer"])
+    B --> R --> S
+    B --> A --> S
+    B --> W --> S
 ```
 
 **Parallel dispatch** — up to 5 sub-agents run concurrently (configurable):
@@ -215,27 +187,14 @@ count = await orchestrator.cancel(session_id)
 
 ### The Prompt Stack
 
-Corza separates agent identity into three composable layers:
+Corza separates agent identity into four composable layers:
 
-```
-┌─────────────────────────────────────────────────────┐
-│  Layer 1: System Prompt (Principles)                │
-│  WHO the agent is, HOW it thinks                    │
-│  Short, permanent, identity-level                   │
-├─────────────────────────────────────────────────────┤
-│  Layer 2: Knowledge Files                           │
-│  WHAT the agent knows                               │
-│  Project context loaded from .md files              │
-├─────────────────────────────────────────────────────┤
-│  Layer 3: Skills (Procedures)                       │
-│  WHAT to do for a specific task                     │
-│  Step-by-step, activated per task                   │
-├─────────────────────────────────────────────────────┤
-│  Layer 4: Working Memory                            │
-│  Runtime scratch space                              │
-│  Built up during the session                        │
-└─────────────────────────────────────────────────────┘
-```
+| Layer | Role | Contents |
+|------:|------|----------|
+| **1 · System Prompt** | _Principles_ | Who the agent is, how it thinks. Short, permanent, identity-level. |
+| **2 · Knowledge** | _What it knows_ | Project context loaded from `.md` files. |
+| **3 · Skills** | _Procedures_ | Step-by-step playbooks, activated per task. |
+| **4 · Working Memory** | _Scratch_ | Runtime state built up during the session. |
 
 See [docs/skills.md](docs/skills.md) for the full explanation.
 
@@ -263,24 +222,23 @@ pip install "corza-agents[all]"           # Everything
 No default model. You choose at runtime with a `provider:model` string:
 
 ```python
-model="openai:gpt-4.1"               # OpenAI
-model="anthropic:claude-sonnet-4-6"   # Anthropic
-model="google:gemini-2.5-pro"         # Google Gemini
-model="groq:llama-3.3-70b-versatile"  # Groq (fast inference)
-model="cerebras:llama-3.3-70b"        # Cerebras (fast inference)
-model="deepseek:deepseek-chat"        # DeepSeek
-model="ollama:qwen3:8b"              # Ollama (local, free)
-model="mistral:mistral-large-latest"  # Mistral
-model="xai:grok-3"                    # xAI Grok
-model="cohere:command-r-plus"         # Cohere
-model="perplexity:sonar-pro"          # Perplexity
-model="fireworks:llama-v3p3-70b-instruct"  # Fireworks
-model="together:meta-llama/Llama-3.1-70B"  # Together
-model="lmstudio:qwen3-8b"            # LM Studio (local)
-model="vllm:meta-llama/Llama-3.1-8B" # vLLM (self-hosted)
+model = "openai:gpt-4.1"
+model = "anthropic:claude-sonnet-4-6"
+model = "google:gemini-2.5-pro"
+model = "groq:llama-3.3-70b-versatile"
+model = "ollama:qwen3:8b"  # local, free
 ```
 
-Also supports: Jan, llama.cpp, LocalAI, Lemonade, Jellybox, Docker Model Runner, and any OpenAI-compatible endpoint.
+<details>
+<summary><strong>All supported providers</strong></summary>
+
+| Hosted | Fast inference | Local / self-hosted |
+|--------|----------------|---------------------|
+| OpenAI · Anthropic · Google · Mistral · Cohere · xAI · DeepSeek · Perplexity | Groq · Cerebras · Fireworks · Together | Ollama · LM Studio · vLLM · llama.cpp · LocalAI · Jan · Lemonade · Jellybox · Docker Model Runner |
+
+Plus any OpenAI-compatible endpoint via `custom_providers`.
+
+</details>
 
 ### Fallback Chains
 
@@ -416,24 +374,13 @@ Tables are auto-created on startup. Schema versions are tracked automatically.
 
 Built-in, no configuration needed:
 
-```
-┌───────────────────┐     ┌─────────────────────┐
-│   Rate Limit      │ ──▶ │ Wait retry_after,   │
-│   (429)           │     │ then retry           │
-├───────────────────┤     ├─────────────────────┤
-│   Timeout /       │ ──▶ │ Exponential backoff  │
-│   Connection      │     │ up to max_llm_retries│
-├───────────────────┤     ├─────────────────────┤
-│   Context         │ ──▶ │ Auto-compact window, │
-│   Overflow        │     │ retry once           │
-├───────────────────┤     ├─────────────────────┤
-│   Provider Down   │ ──▶ │ Try fallback_models  │
-│                   │     │ in order             │
-├───────────────────┤     ├─────────────────────┤
-│   Non-retryable   │ ──▶ │ Session → WAITING,   │
-│   Error           │     │ resume on next msg   │
-└───────────────────┘     └─────────────────────┘
-```
+| Failure | Recovery |
+|---------|----------|
+| **Rate limit (429)** | Wait `retry_after`, then retry |
+| **Timeout / connection** | Exponential backoff up to `max_llm_retries` |
+| **Context overflow** | Auto-compact window, retry once |
+| **Provider down** | Try `fallback_models` in order |
+| **Non-retryable error** | Session → `WAITING`, resume on next message |
 
 ---
 
@@ -545,6 +492,9 @@ python examples/01_hello_agent.py  # change model to "openai:gpt-4.1"
 
 ## Project Structure
 
+<details>
+<summary><strong>Click to expand the full module tree</strong></summary>
+
 ```
 corza-agent-framework/
 ├── src/corza_agents/
@@ -601,6 +551,8 @@ corza-agent-framework/
 ├── docs/                  # Extended documentation
 └── pyproject.toml         # Package metadata
 ```
+
+</details>
 
 ---
 
