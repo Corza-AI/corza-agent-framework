@@ -309,7 +309,7 @@ class Orchestrator:
                 and ctx.parent_session_id
                 or (ctx and ctx.metadata and ctx.metadata.get("parent_session_id"))
             )
-            if is_sub_agent and action != "report":
+            if is_sub_agent and action not in ("report", "get_report"):
                 return {
                     "status": "error",
                     "message": (
@@ -329,12 +329,14 @@ class Orchestrator:
                 return await _message(session_id, task, ctx)
             elif action == "report":
                 return await _report(content, ctx)
+            elif action == "get_report":
+                return await _get_report(session_id)
             elif action == "status":
                 return await _status(session_id)
             else:
                 return {
                     "status": "error",
-                    "message": f"Unknown action '{action}'. Use: spawn, spawn_parallel, message, report, status, list.",
+                    "message": f"Unknown action '{action}'. Use: spawn, spawn_parallel, message, report, get_report, status, list.",
                 }
 
         async def _list_agents(ctx):
@@ -721,6 +723,69 @@ class Orchestrator:
                 "stored": "parent",
                 "parent_session_id": parent_sid,
                 "message": f"Report sent to orchestrator (parent session {parent_sid[:8]}...).",
+            }
+
+        async def _get_report(child_session_id):
+            """Retrieve the final report from a completed sub-agent by session_id.
+
+            Looks up the report stored via `manage_agent(action='report')` in the
+            sub-agent's memory. Falls back to the last assistant message in the
+            sub-agent's session if no explicit report was filed.
+            """
+            if not child_session_id:
+                return {"status": "error", "message": "Provide 'session_id' of the sub-agent."}
+
+            session = await repo.get_session(child_session_id)
+            if not session:
+                return {
+                    "status": "error",
+                    "message": f"Sub-agent session '{child_session_id}' not found.",
+                }
+
+            # Resolve the agent_name for the stored report key
+            agent_name = None
+            for name, defn in sub_agents.items():
+                if defn.id == session.agent_id:
+                    agent_name = name
+                    break
+
+            report_content = None
+            if agent_name:
+                report_key = f"doc:report-{agent_name}-{child_session_id[:8]}"
+                report_content = await repo.get_memory(session.agent_id, report_key)
+
+            # Fallback: pull last assistant message from the child session
+            source = "report"
+            if not report_content:
+                try:
+                    msgs = await repo.get_messages(child_session_id)
+                    for m in reversed(msgs):
+                        role = getattr(m.role, "value", m.role)
+                        if role == "assistant" and m.content:
+                            report_content = m.content
+                            source = "last_message"
+                            break
+                except Exception:
+                    pass
+
+            if not report_content:
+                return {
+                    "status": "error",
+                    "message": (
+                        f"No report found for session '{child_session_id}'. "
+                        f"Agent status: {session.status.value}. "
+                        f"The sub-agent may not have filed a report yet."
+                    ),
+                    "agent_status": session.status.value,
+                }
+
+            return {
+                "status": "success",
+                "session_id": child_session_id,
+                "agent_name": agent_name,
+                "agent_status": session.status.value,
+                "source": source,
+                "report": report_content,
             }
 
         async def _status(child_session_id):

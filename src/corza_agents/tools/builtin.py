@@ -129,6 +129,8 @@ async def manage_objective(
         "Actions: 'spawn' (dispatch one agent), 'spawn_parallel' (dispatch multiple concurrently — "
         "pass JSON array of {agent_name, task} objects in 'tasks' param), "
         "'message' (follow up with an existing agent), 'report' (sub-agents use this to send findings back), "
+        "'get_report' (retrieve the final report from a completed sub-agent by session_id — use this when "
+        "a previously dispatched agent has finished and you want its results), "
         "'status' (check agent state), 'list' (show available agent types). "
         "Sessions persist — you can return to agents across turns."
     ),
@@ -149,7 +151,7 @@ async def manage_agent(
     Manage sub-agent lifecycle with two-way communication.
 
     Args:
-        action: One of 'spawn', 'spawn_parallel', 'message', 'report', 'status', 'list'
+        action: One of 'spawn', 'spawn_parallel', 'message', 'report', 'get_report', 'status', 'list'
         agent_name: Name of the sub-agent to spawn (for 'spawn')
         task: Task description (for 'spawn') or follow-up message (for 'message')
         tasks: JSON array of {agent_name, task, context_data?} objects (for 'spawn_parallel')
