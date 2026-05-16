@@ -34,20 +34,13 @@ You focus on **what your agent should do**. Corza handles **how it stays alive i
 
 ## Why does it exist?
 
-Almost every AI agent framework today was designed for someone tinkering in a Jupyter notebook or running a script in their terminal. They're great for demos. They fall apart the moment you try to ship them to actual customers.
+Almost every AI agent framework out there — Claude Agent SDK, LangChain agents, AutoGen, CrewAI — was built to run **on your local computer**. They read and write files on your laptop. They expect a terminal. They assume one user (you). They're brilliant for personal automation, research scripts, and coding assistants.
 
-The problems are always the same:
+But the moment you want to put an agent **inside a real web product** — a SaaS app, a customer portal, an internal tool — none of that translates. There's no filesystem to read from. There are hundreds of users, each with their own data. The agent has to stream to a browser, survive a server restart, and never let one user see another user's conversation.
 
-| The notebook works fine, but in production… |
-|---|
-| 🔌 The conversation disappears the second you restart the server. |
-| ⏳ The user stares at a spinner because nothing streams. |
-| 👥 There's no concept of "users" or "accounts" — every conversation is anonymous. |
-| 💥 One flaky API call kills the whole session. |
-| 🔒 You're locked into one AI provider, and when they go down, you go down. |
-| 🤹 You wanted a team of agents working together, but there's no way to orchestrate them. |
+**Corza is the first agent framework designed from day one for web applications.**
 
-Every team building a serious AI product ends up writing the same plumbing to fix this. Corza is that plumbing, pre-built and battle-tested, so you don't have to.
+It's a plug-and-play library: install it, point it at your database, and you immediately have a working AI agent backend — with streaming, persistence, multi-user isolation, and team-of-agents orchestration. No filesystem assumptions. No "single user" assumptions. No DIY plumbing.
 
 ---
 
@@ -111,13 +104,31 @@ That's intentional. Corza does one thing — make agents work inside real apps �
 
 ---
 
-## How does it feel to use?
+## How does it work?
 
-You describe an agent in a few lines: what it's called, which AI model to use, and what tools it can use. Corza turns that into a fully working HTTP API with streaming, persistence, and multi-user support — no extra setup.
+An agent in Corza is made of three things — **skills** (what it knows how to do), **tools** (the actions it can take), and optionally **sub-agents** (specialists it can call on). Your web app sends the user's message in, Corza orchestrates the agent's reasoning, and streams the reply back to the browser.
 
-Need an agent that can search your database? Define a `search` function, hand it to Corza, done. Need three agents to work together? Describe each one and Corza orchestrates them. Want to swap from OpenAI to a free local model for development? Change one string.
+```mermaid
+flowchart TB
+    User([👤 User in browser])
+    subgraph Corza["🧠 Corza Agent"]
+        direction TB
+        Skills["📚 <b>Skills</b><br/><sub>knowledge & playbooks<br/>the agent uses to think</sub>"]
+        Tools["🛠️ <b>Tools</b><br/><sub>actions the agent can take<br/>— search, query, send email…</sub>"]
+        Subs["🤝 <b>Sub-agents</b><br/><sub>specialists the agent can<br/>delegate to in parallel</sub>"]
+    end
+    DB[("💾 Your database<br/><sub>conversations, history</sub>")]
+    LLM([🤖 Any AI model<br/>OpenAI · Anthropic · local])
 
-The framework gets out of your way and lets you think about **the agent**, not the wiring.
+    User <-->|live stream| Corza
+    Corza <--> Skills
+    Corza <--> Tools
+    Corza <--> Subs
+    Corza <--> LLM
+    Corza <--> DB
+```
+
+You describe the agent in a few lines — what it's called, which AI model to use, which tools and skills it has. Corza turns that into a fully working backend with streaming, persistence, and multi-user support. The framework gets out of your way and lets you focus on **what your agent does**, not the wiring.
 
 ---
 
